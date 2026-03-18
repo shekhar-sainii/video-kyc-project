@@ -1,0 +1,64 @@
+const mongoose = require("mongoose");
+
+const kycSchema = new mongoose.Schema(
+  {
+    panNumber: {
+      type: String,
+      required: true,
+      uppercase: true,
+      trim: true,
+      match: /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/,
+    },
+
+    signature: {
+      type: String,
+      required: true,
+    },
+
+    uploadedPhoto: {
+      type: String,
+      required: true,
+    },
+
+    panCardImage: {
+      type: String,
+      default: null,
+    },
+
+    selfieImage: {
+      type: String,
+      default: null,
+    },
+
+    faceMatch: {
+      type: Boolean,
+      default: null,
+    },
+
+    panMatch: {
+      type: Boolean,
+      default: null,
+    },
+
+    status: {
+      type: String,
+      enum: ["Pending", "Verified", "Rejected"],
+      default: "Pending",
+    },
+
+    verificationMessage: {
+      type: String,
+      default: null,
+    },
+
+    submittedAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+module.exports = mongoose.model("KYCApplication", kycSchema);
