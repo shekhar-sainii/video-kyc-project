@@ -26,12 +26,14 @@ const Hero = () => {
         </p>
         <div className="flex flex-wrap gap-5">
           <button 
-            onClick={() => navigate('/register')}
+            onClick={() => navigate('/kyc-application')}
             className="bg-indigo-500 hover:bg-indigo-600 text-white px-10 py-4 rounded-2xl font-bold text-lg shadow-2xl shadow-indigo-500/40 transform hover:-translate-y-1 transition duration-200 flex items-center gap-2"
           >
             Start Your KYC <FiArrowRight />
           </button>
-          <button className="bg-white/5 hover:bg-white/10 border border-white/20 px-10 py-4 rounded-2xl font-bold text-lg backdrop-blur-md transition duration-200">
+          <button
+           onClick={() => navigate('/dashboard')}
+           className="bg-white/5 hover:bg-white/10 border border-white/20 px-10 py-4 rounded-2xl font-bold text-lg backdrop-blur-md transition duration-200">
             View API Docs
           </button>
         </div>

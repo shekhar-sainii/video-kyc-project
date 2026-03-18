@@ -45,6 +45,10 @@ const userService = {
     return authAxios.get("/user/admin/all-users");
   },
 
+  getSecurityLogs(params) {
+    return authAxios.get("/user/admin/security-logs", { params });
+  },
+
   /**
    * Deactivate a specific user
    * Route: PATCH /api/v1/users/admin/deactivate/:id

@@ -2,22 +2,52 @@ import React, { useState, useEffect } from "react";
 import { useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import { 
-  FiList, FiSearch, FiFilter, FiAlertCircle, 
-  FiArrowRight, FiUser, FiCalendar, FiZap 
+  FiSearch, FiFilter, FiArrowRight
 } from "react-icons/fi";
 import Table from "../../../components/Table"; // Use your existing table component
+import Swal from "sweetalert2";
+import kycService from "../../../services/kycService";
 
 const KYCQueue = () => {
   const navigate = useNavigate();
   const isDark = useSelector((state) => state.theme.mode === "dark");
   const [loading, setLoading] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [queue, setQueue] = useState([]);
+  const [summary, setSummary] = useState({
+    total: 0,
+    slaCompliance: "100%",
+    averageReviewTime: "0.0m",
+    automationRate: "100%",
+  });
 
-  // Mock Data: Backend se sirf 'Pending' status waale fetch honge
-  const [queue, setQueue] = useState([
-    { _id: "65a1b2", name: "Shekhar Saini", pan: "ABCDE1234F", score: 92, date: "2026-03-18", time: "10:15 AM", priority: "High" },
-    { _id: "65a1b3", name: "Rahul Sharma", pan: "BCDEF5678G", score: 45, date: "2026-03-18", time: "11:00 AM", priority: "Medium" },
-    { _id: "65a1b4", name: "Anita Desai", pan: "XYWZA9012Z", score: 12, date: "2026-03-17", time: "04:30 PM", priority: "Critical" },
-  ]);
+  useEffect(() => {
+    const fetchQueue = async () => {
+      try {
+        setLoading(true);
+        const res = await kycService.getAdminQueue();
+        setQueue(res?.data?.data?.queue || []);
+        setSummary(res?.data?.data?.summary || {});
+      } catch (error) {
+        const message = error?.response?.data?.message || "Failed to load KYC queue.";
+        Swal.fire("Error", message, "error");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void fetchQueue();
+  }, []);
+
+  const filteredQueue = queue.filter((row) => {
+    const term = searchTerm.toLowerCase();
+    return (
+      !term ||
+      row.name.toLowerCase().includes(term) ||
+      row.pan.toLowerCase().includes(term) ||
+      row.email.toLowerCase().includes(term)
+    );
+  });
 
   const columns = [
     {
@@ -107,6 +137,8 @@ const KYCQueue = () => {
                 <input 
                     type="text" 
                     placeholder="Search applicant..." 
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
                     className={`pl-10 pr-4 py-2.5 rounded-xl border-2 outline-none text-xs font-bold transition-all ${
                         isDark ? "bg-slate-800 border-slate-700 focus:border-indigo-500" : "bg-white border-slate-100 focus:border-indigo-600"
                     }`}
@@ -120,9 +152,9 @@ const KYCQueue = () => {
 
       {/* --- QUEUE STATUS CARDS --- */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-         <StatusBox label="SLA Compliance" value="94%" sub="Applications processed < 24h" color="text-indigo-500" />
-         <StatusBox label="Average Review Time" value="4.2m" sub="Per manual verification" color="text-blue-500" />
-         <StatusBox label="AI Automation Rate" value="82%" sub="Auto-approved by Vision AI" color="text-green-500" />
+         <StatusBox label="SLA Compliance" value={summary.slaCompliance || "100%"} sub="Applications processed < 24h" color="text-indigo-500" />
+         <StatusBox label="Average Review Time" value={summary.averageReviewTime || "0.0m"} sub="Per manual verification" color="text-blue-500" />
+         <StatusBox label="AI Automation Rate" value={summary.automationRate || "100%"} sub="Auto-prioritized queue insights" color="text-green-500" />
       </div>
 
       {/* --- TABLE AREA --- */}
@@ -130,10 +162,10 @@ const KYCQueue = () => {
         isDark ? "bg-[#1a2b4b] border-slate-700 shadow-indigo-900/10" : "bg-white border-slate-100"
       }`}>
         <Table
-          data={queue}
+          data={filteredQueue}
           columns={columns}
           count={10}
-          total={queue.length}
+          total={filteredQueue.length}
           result={() => {}}
         />
       </div>

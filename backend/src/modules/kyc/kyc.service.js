@@ -8,6 +8,148 @@ const maskPan = (pan) =>
   pan.replace(/^(.{4}).*(.{2})$/, "$1••••$2");
 
 class KYCService {
+  async getAdminApplicationDetail(applicationId) {
+    const application = await kycRepository.getApplicationForAdminById(applicationId);
+
+    if (!application) {
+      const error = new Error("Application not found");
+      error.statusCode = 404;
+      throw error;
+    }
+
+    const submittedAt = application.submittedAt || application.createdAt;
+
+    return {
+      _id: application._id,
+      applicant: {
+        name: application.user?.name || "Unknown User",
+        email: application.user?.email || "",
+        profileImage: application.user?.profileImage || null,
+      },
+      panNumber: application.panNumber,
+      submittedAt,
+      status: application.status,
+      uploadedPhoto: application.uploadedPhoto,
+      selfieImage: application.selfieImage,
+      panCardImage: application.panCardImage,
+      signature: application.signature,
+      faceMatch: application.faceMatch,
+      panMatch: application.panMatch,
+      verificationMessage: application.verificationMessage,
+      faceMatchScore:
+        application.faceMatch === null ? null : application.faceMatch ? 100 : 0,
+    };
+  }
+
+  async getAdminDashboard() {
+    const summary = await kycRepository.getDashboardSummary();
+    const recentApplications = await kycRepository.getRecentApplications(6);
+    const trendRows = await kycRepository.getApplicationsTrend(7);
+
+    const trendMap = new Map(
+      trendRows.map((row) => [
+        `${row._id.year}-${row._id.month}-${row._id.day}`,
+        row.apps,
+      ])
+    );
+
+    const trend = Array.from({ length: 7 }, (_, index) => {
+      const date = new Date();
+      date.setHours(0, 0, 0, 0);
+      date.setDate(date.getDate() - (6 - index));
+
+      const key = `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+
+      return {
+        name: date.toLocaleDateString("en-US", { weekday: "short" }),
+        apps: trendMap.get(key) || 0,
+      };
+    });
+
+    const totalReviewed = summary.verifiedCount + summary.rejectedCount;
+    const verificationRate = summary.totalApplicants
+      ? ((summary.verifiedCount / summary.totalApplicants) * 100).toFixed(1)
+      : "0.0";
+    const rejectionRate = totalReviewed
+      ? ((summary.rejectedCount / totalReviewed) * 100).toFixed(1)
+      : "0.0";
+
+    const recentQueue = recentApplications.map((application) => ({
+      id: application._id,
+      name: application.user?.name || "Unknown User",
+      email: application.user?.email || "",
+      pan: maskPan(application.panNumber),
+      panStatus: application.panMatch === null ? "Pending" : application.panMatch ? "Match" : "Mismatch",
+      score: application.faceMatch === null ? "N/A" : application.faceMatch ? "100%" : "0%",
+      status: application.status,
+      submittedAt: application.submittedAt,
+    }));
+
+    return {
+      summary: {
+        totalApplicants: summary.totalApplicants,
+        pendingReview: summary.pendingReview,
+        verificationRate: `${verificationRate}%`,
+        rejectionRate: `${rejectionRate}%`,
+      },
+      trend,
+      recentQueue,
+    };
+  }
+
+  async getAdminQueue() {
+    const pendingApplications = await kycRepository.getPendingApplications();
+
+    const queue = pendingApplications.map((application) => {
+      const submittedAt = application.submittedAt || application.createdAt;
+      const priority = (() => {
+        const ageHours = (Date.now() - new Date(submittedAt).getTime()) / (1000 * 60 * 60);
+
+        if (ageHours >= 24) return "Critical";
+        if (ageHours >= 8) return "High";
+        if (ageHours >= 2) return "Medium";
+        return "Low";
+      })();
+
+      return {
+        _id: application._id,
+        name: application.user?.name || "Unknown User",
+        email: application.user?.email || "",
+        pan: maskPan(application.panNumber),
+        submittedAt,
+        date: new Date(submittedAt).toLocaleDateString("en-CA"),
+        time: new Date(submittedAt).toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+        priority,
+        score: application.faceMatch === null ? 50 : application.faceMatch ? 100 : 0,
+      };
+    });
+
+    const total = queue.length;
+    const criticalCount = queue.filter((item) => item.priority === "Critical").length;
+    const highCount = queue.filter((item) => item.priority === "High").length;
+    const averageReviewTime = total
+      ? `${(
+          queue.reduce((sum, item) => {
+            const ageMinutes = (Date.now() - new Date(item.submittedAt).getTime()) / (1000 * 60);
+            return sum + ageMinutes;
+          }, 0) / total
+        ).toFixed(1)}m`
+      : "0.0m";
+
+    return {
+      queue,
+      summary: {
+        total,
+        slaCompliance: total ? `${Math.max(0, 100 - Math.round((criticalCount / total) * 100))}%` : "100%",
+        averageReviewTime,
+        automationRate: total ? `${Math.max(0, 100 - Math.round((highCount / total) * 100))}%` : "100%",
+      },
+    };
+  }
+
   async submitKyc(data) {
     const panRegex = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
 

@@ -7,6 +7,7 @@ class UserResponseDTO {
         this.address = user.address || "";
         this.profileImage = user.profileImage || "";
         this.role = user.role;
+        this.isActive = user.isActive;
         this.isEmailVerified = user.isEmailVerified;
         this.subscription = user.subscription;
         this.lastLoginAt = user.lastLoginAt;

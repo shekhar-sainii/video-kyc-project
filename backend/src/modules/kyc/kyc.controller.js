@@ -2,6 +2,48 @@ const { extractPanNumber } = require("../../services/ocr.service");
 const kycService = require("./kyc.service");
 
 class KYCController {
+  async getAdminApplicationDetail(req, res, next) {
+    try {
+      const data = await kycService.getAdminApplicationDetail(req.params.id);
+
+      return res.status(200).json({
+        success: true,
+        message: "KYC application detail fetched successfully",
+        data,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async getAdminQueue(req, res, next) {
+    try {
+      const data = await kycService.getAdminQueue();
+
+      return res.status(200).json({
+        success: true,
+        message: "Admin queue fetched successfully",
+        data,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async getAdminDashboard(req, res, next) {
+    try {
+      const data = await kycService.getAdminDashboard();
+
+      return res.status(200).json({
+        success: true,
+        message: "Admin dashboard fetched successfully",
+        data,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async submitKyc(req, res, next) {
     try {
       const { panNumber, signature } = req.body;

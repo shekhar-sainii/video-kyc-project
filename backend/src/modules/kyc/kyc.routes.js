@@ -3,6 +3,7 @@ const router = express.Router();
 
 const upload = require("../../config/multer");
 const authMiddleware = require("../../middlewares/auth.middleware");
+const roleMiddleware = require("../../middlewares/role.middleware");
 const validate = require("../../middlewares/validate.middleware");
 
 const kycController = require("./kyc.controller");
@@ -13,6 +14,24 @@ const {
 } = require("./kyc.validation");
 
 router.use(authMiddleware);
+
+router.get(
+  "/admin/dashboard",
+  roleMiddleware("admin"),
+  kycController.getAdminDashboard
+);
+
+router.get(
+  "/admin/queue",
+  roleMiddleware("admin"),
+  kycController.getAdminQueue
+);
+
+router.get(
+  "/admin/application/:id",
+  roleMiddleware("admin"),
+  kycController.getAdminApplicationDetail
+);
 
 router.post(
   "/submit",

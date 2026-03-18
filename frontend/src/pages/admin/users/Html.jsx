@@ -1,6 +1,6 @@
 import React from "react";
 import Table from "../../../components/Table";
-import { FiEye, FiShield, FiCheckCircle, FiActivity, FiUserCheck } from "react-icons/fi";
+import { FiShield, FiUserCheck } from "react-icons/fi";
 import { useSelector } from "react-redux";
 
 const Html = ({ data, pagination, onView, onUpdateStatus, onPageChange }) => {
@@ -12,13 +12,21 @@ const Html = ({ data, pagination, onView, onUpdateStatus, onPageChange }) => {
       name: "Applicant Identity",
       render: (row) => (
         <div className="flex items-center gap-4">
-          <div className="w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center font-black text-xs border border-indigo-500/20">
-            {row.name.charAt(0).toUpperCase()}
-          </div>
+          {row.profileImage ? (
+            <img
+              src={row.profileImage}
+              alt={row.name}
+              className="w-10 h-10 rounded-xl object-cover border border-indigo-500/20"
+            />
+          ) : (
+            <div className="w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center font-black text-xs border border-indigo-500/20">
+              {row.name.charAt(0).toUpperCase()}
+            </div>
+          )}
           <div className="flex flex-col">
             <span className={`font-black text-sm tracking-tight ${isDark ? "text-slate-100" : "text-slate-900"}`}>{row.name}</span>
             <span className={`text-[10px] font-bold uppercase tracking-widest ${isDark ? "text-slate-500" : "text-slate-400"}`}>
-              PAN: {row.pan}
+              {row.email}
             </span>
           </div>
         </div>
@@ -26,42 +34,47 @@ const Html = ({ data, pagination, onView, onUpdateStatus, onPageChange }) => {
     },
     {
       key: "status",
-      name: "KYC Status",
+      name: "Account Status",
       render: (row) => (
         <span className={`px-4 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-full border ${
-          row.status === 'Verified' ? "bg-green-500/10 border-green-500/20 text-green-500" :
-          row.status === 'Rejected' ? "bg-red-500/10 border-red-500/20 text-red-500" :
-          "bg-amber-500/10 border-amber-500/20 text-amber-500"
+          row.isActive
+            ? "bg-green-500/10 border-green-500/20 text-green-500"
+            : "bg-red-500/10 border-red-500/20 text-red-500"
         }`}>
-          {row.status}
+          {row.isActive ? "Active" : "Inactive"}
         </span>
       ),
     },
     {
-      key: "vision_score",
-      name: "AI Vision Score",
+      key: "role",
+      name: "Role",
       render: (row) => (
-        <div className="flex flex-col gap-1.5 w-32">
-           <div className="flex justify-between text-[10px] font-black uppercase tracking-tighter">
-             <span className={row.score > 80 ? "text-green-500" : row.score > 40 ? "text-amber-500" : "text-red-500"}>
-                {row.score}% Match
-             </span>
-           </div>
-           <div className={`h-1.5 w-full rounded-full overflow-hidden ${isDark ? "bg-slate-800" : "bg-slate-100"}`}>
-             <div 
-               className={`h-full transition-all duration-700 ${row.score > 80 ? "bg-green-500" : row.score > 40 ? "bg-amber-500" : "bg-red-500"}`} 
-               style={{width: `${row.score}%`}}
-             ></div>
-           </div>
-        </div>
+        <span className={`px-4 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-full border ${
+          row.role === "admin"
+            ? "bg-indigo-500/10 border-indigo-500/20 text-indigo-500"
+            : "bg-slate-500/10 border-slate-500/20 text-slate-500"
+        }`}>
+          {row.role}
+        </span>
+      ),
+    },
+    {
+      key: "verification",
+      name: "Email Verified",
+      render: (row) => (
+        <span className={`text-xs font-bold ${
+          row.isEmailVerified ? "text-green-500" : isDark ? "text-slate-400" : "text-slate-500"
+        }`}>
+          {row.isEmailVerified ? "Verified" : "Pending"}
+        </span>
       ),
     },
     {
       key: "date",
-      name: "Submission Date",
+      name: "Joined On",
       render: (row) => (
         <span className={`text-xs font-bold ${isDark ? "text-slate-400" : "text-slate-500"}`}>
-          {row.submittedAt}
+          {row.createdAt ? new Date(row.createdAt).toLocaleDateString() : "N/A"}
         </span>
       ),
     },
@@ -80,7 +93,7 @@ const Html = ({ data, pagination, onView, onUpdateStatus, onPageChange }) => {
           <button
             onClick={() => onUpdateStatus(row)} 
             className={`p-2.5 rounded-xl transition-all border ${isDark ? "border-slate-700 hover:bg-slate-800 text-slate-400 hover:text-indigo-400" : "border-slate-100 hover:bg-slate-50 text-slate-600"}`}
-            title="Update Decision"
+            title={row.isActive ? "Deactivate User" : "Activate User"}
           >
             <FiShield size={18} />
           </button>

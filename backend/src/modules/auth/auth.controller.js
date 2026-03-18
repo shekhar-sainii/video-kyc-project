@@ -3,6 +3,7 @@ const ApiResponse = require("../../core/apiResponse");
 const sendEmail = require("../../utils/sendEmail");
 const verifyTemplate = require("../../templates/emails/verifyEmail.template");
 const resetTemplate = require("../../templates/emails/resetPassword.template");
+const { FRONTEND_URL } = require("../../config/env");
 const { OAuth2Client } = require('google-auth-library');
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -14,8 +15,7 @@ class AuthController {
             const token = await authService.resendVerification(email);
 
             if (token) {
-                const verificationLink = `http://localhost:5000/api/v1/auth/verify-email?token=${token}`;
-                // const verificationLink = `${process.env.BACKEND_URL}/api/v1/auth/verify-email?token=${token}`;
+                const verificationLink = `${FRONTEND_URL || "https://january-unredeeming-margarete.ngrok-free.dev"}/verify-email?token=${token}`;
 
                 await sendEmail({
                     to: email,
@@ -37,12 +37,7 @@ class AuthController {
         try {
             const { user, verificationToken } = await authService.register(req.body);
 
-            // TODO: send email here
-            // console.log(
-            //     `Verification link: http://localhost:5000/api/v1/auth/verify-email?token=${verificationToken}`
-            // );
-
-            const verificationLink = `http://localhost:5173/api/v1/auth/verify-email?token=${verificationToken}`;
+            const verificationLink = `${FRONTEND_URL || "http://localhost:5173"}/verify-email?token=${verificationToken}`;
 
             await sendEmail({
                 to: user.email,

@@ -13,6 +13,10 @@ const authService = {
     return authAxios.post('/auth/login', data);
   },
 
+  refreshToken(refreshToken) {
+    return authAxios.post('/auth/refresh-token', { refreshToken });
+  },
+
   register(data) {
     // Backend path: /api/v1/auth/register
     return authAxios.post('/auth/register', data);
@@ -35,6 +39,10 @@ const authService = {
   // Email verification route
   verifyEmail(token) {
     return authAxios.get(`/auth/verify-email?token=${token}`);
+  },
+
+  logout(refreshToken) {
+    return authAxios.post('/auth/logout', { refreshToken });
   }
 };
 

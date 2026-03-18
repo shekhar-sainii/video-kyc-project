@@ -36,11 +36,10 @@ const LoginPage = () => {
       setTokens(accessToken, refreshToken, user.role);
       dispatch(loginSuccess({ user, role: user.role }));
 
-      // Intern Assessment Flow: Redirecting to Application Form or List
       if (user.role === 'admin') {
         navigate("/admin");
       } else {
-        navigate("/dashboard"); // Yahan user apni KYC application dekhega
+        navigate("/"); 
       }
     } catch (err) {
       setError(err?.response?.data?.message || "Invalid credentials");

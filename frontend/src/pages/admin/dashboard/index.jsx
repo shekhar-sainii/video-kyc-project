@@ -1,29 +1,48 @@
-import React from "react";
-import { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useSelector } from "react-redux";
-import { motion } from "framer-motion";
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid
 } from "recharts";
 
 import StatsCard from "./StatsCard";
 import { 
-  FiUsers, FiVideo, FiShield, FiCheckCircle, 
-  FiActivity, FiZap, FiAlertCircle, FiArrowUpRight, FiSearch
+  FiUsers, FiShield, FiActivity, FiZap, FiSearch
 } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
-
-// Mock data: KYC Applications Volume
-const KYC_VOLUME_DATA = [
-  { name: 'Mon', apps: 120 }, { name: 'Tue', apps: 150 },
-  { name: 'Wed', apps: 200 }, { name: 'Thu', apps: 180 },
-  { name: 'Fri', apps: 250 }, { name: 'Sat', apps: 90 },
-  { name: 'Sun', apps: 70 },
-];
+import Swal from "sweetalert2";
+import kycService from "../../../services/kycService";
 
 const Dashboard = () => {
   const isDark = useSelector((state) => state.theme.mode === "dark");
   const navigate = useNavigate();
+  const [dashboardData, setDashboardData] = useState({
+    summary: {
+      totalApplicants: 0,
+      pendingReview: 0,
+      verificationRate: "0.0%",
+      rejectionRate: "0.0%",
+    },
+    trend: [],
+    recentQueue: [],
+  });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchDashboard = async () => {
+      try {
+        setLoading(true);
+        const res = await kycService.getAdminDashboard();
+        setDashboardData(res?.data?.data || {});
+      } catch (error) {
+        const message = error?.response?.data?.message || "Failed to load admin dashboard.";
+        Swal.fire("Error", message, "error");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void fetchDashboard();
+  }, []);
 
   return (
     <div className={`p-8 space-y-8 min-h-screen transition-colors duration-300
@@ -49,10 +68,10 @@ const Dashboard = () => {
 
       {/* STATS GRID - KYC Specific Metrics */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatsCard title="Total Applicants" value="1,284" icon={FiUsers} color="indigo" trend="+12%" />
-        <StatsCard title="Pending Review" value="42" icon={FiActivity} color="orange" trend="High" />
-        <StatsCard title="AI Verification Rate" value="96.2%" icon={FiZap} color="green" trend="Stable" />
-        <StatsCard title="Security Incidents" value="0" icon={FiShield} color="red" trend="Safe" />
+        <StatsCard title="Total Applicants" value={String(dashboardData.summary?.totalApplicants ?? 0)} icon={FiUsers} color="indigo" trend={loading ? "Loading" : "Live"} />
+        <StatsCard title="Pending Review" value={String(dashboardData.summary?.pendingReview ?? 0)} icon={FiActivity} color="orange" trend={dashboardData.summary?.pendingReview > 0 ? "Queued" : "Clear"} />
+        <StatsCard title="Verification Rate" value={dashboardData.summary?.verificationRate ?? "0.0%"} icon={FiZap} color="green" trend="Dynamic" />
+        <StatsCard title="Rejection Rate" value={dashboardData.summary?.rejectionRate ?? "0.0%"} icon={FiShield} color="red" trend="Monitored" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -66,7 +85,7 @@ const Dashboard = () => {
             <div className="px-3 py-1 bg-indigo-500/10 text-indigo-500 rounded-lg text-[10px] font-black uppercase">Live Updates</div>
           </div>
           <ResponsiveContainer width="100%" height={300}>
-            <AreaChart data={KYC_VOLUME_DATA}>
+            <AreaChart data={dashboardData.trend || []}>
               <defs>
                 <linearGradient id="colorApps" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#6366f1" stopOpacity={0.2} />
@@ -86,19 +105,19 @@ const Dashboard = () => {
         <div className="space-y-6">
           <div className={`rounded-[2rem] p-6 border ${isDark ? "bg-[#1a2b4b] border-slate-700" : "bg-white border-slate-200"}`}>
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Vision AI Engine</p>
-            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-bold">Face Match Confidence</span>
-              <span className="text-xs font-black text-indigo-500">98.4%</span>
+              <span className="text-xs font-black text-indigo-500">{dashboardData.summary?.verificationRate ?? "0.0%"}</span>
             </div>
             <div className="h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-              <div className="h-full bg-indigo-500" style={{width: '98%'}}></div>
+              <div className="h-full bg-indigo-500" style={{width: dashboardData.summary?.verificationRate ?? "0%"}}></div>
             </div>
             <div className="flex items-center justify-between mt-4 mb-2">
-              <span className="text-xs font-bold">PAN OCR Accuracy</span>
-              <span className="text-xs font-black text-blue-500">94.1%</span>
+              <span className="text-xs font-bold">Pending Workload</span>
+              <span className="text-xs font-black text-blue-500">{dashboardData.summary?.pendingReview ?? 0}</span>
             </div>
             <div className="h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-              <div className="h-full bg-blue-500" style={{width: '94%'}}></div>
+              <div className="h-full bg-blue-500" style={{width: `${Math.min(((dashboardData.summary?.pendingReview ?? 0) / Math.max(dashboardData.summary?.totalApplicants ?? 1, 1)) * 100, 100)}%`}}></div>
             </div>
           </div>
           
@@ -108,7 +127,9 @@ const Dashboard = () => {
             <p className="text-indigo-100 text-[11px] font-medium mt-3 opacity-80 leading-relaxed">
                 Interacting with user identity data. Session encryption is strictly enforced.
             </p>
-            <button className="mt-6 w-full py-3 bg-white/10 hover:bg-white/20 border border-white/20 rounded-2xl text-[10px] font-black uppercase tracking-widest backdrop-blur-md transition-all">
+            <button 
+            onClick={() => navigate("/admin/logs")}
+            className="mt-6 w-full py-3 bg-white/10 hover:bg-white/20 border border-white/20 rounded-2xl text-[10px] font-black uppercase tracking-widest backdrop-blur-md transition-all">
               Security Logs
             </button>
           </div>
@@ -136,25 +157,24 @@ const Dashboard = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
-              {[
-                { id: 1,name: "Shekhar Saini", pan: "Match", score: "98%", status: "Pending" },
-                { id: 2,name: "John Doe", pan: "Match", score: "94%", status: "Verified" },
-                { id: 3,name: "Amit Kumar", pan: "Mismatch", score: "12%", status: "Rejected" },
-              ].map((user, i) => (
+              {(dashboardData.recentQueue || []).map((user, i) => (
                 <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                   <td className="py-5">
                     <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-lg bg-indigo-500/10 text-indigo-500 flex items-center justify-center font-bold text-xs">
                             {user.name.charAt(0)}
                         </div>
-                        <span className="font-bold">{user.name}</span>
+                        <div>
+                          <span className="font-bold block">{user.name}</span>
+                          <span className="text-[10px] opacity-50">{user.pan}</span>
+                        </div>
                     </div>
                   </td>
-                  <td className="py-5 font-medium text-xs">{user.pan}</td>
+                  <td className="py-5 font-medium text-xs">{user.panStatus}</td>
                   <td className="py-5">
                     <div className="flex items-center gap-2">
                         <div className="w-12 h-1 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                             <div className="h-full bg-green-500" style={{width: user.score}}></div>
+                             <div className={`h-full ${user.score === "0%" ? "bg-red-500" : user.score === "N/A" ? "bg-amber-500" : "bg-green-500"}`} style={{width: user.score === "N/A" ? "35%" : user.score}}></div>
                         </div>
                         <span className="text-[10px] font-black">{user.score}</span>
                     </div>
@@ -170,7 +190,7 @@ const Dashboard = () => {
                   </td>
                   <td className="py-5 text-right">
                     <button
-                    onClick={() => navigate(`/admin/kyc-review/${user.id}`)} // 3. Navigate on click
+                    onClick={() => navigate(`/admin/kyc-review/${user.id}`)}
                   className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
                     isDark ? 'bg-slate-800 hover:bg-slate-700' : 'bg-slate-50 hover:bg-indigo-600 hover:text-white'
                   }`}>
@@ -180,6 +200,13 @@ const Dashboard = () => {
                   </td>
                 </tr>
               ))}
+              {!loading && (!dashboardData.recentQueue || dashboardData.recentQueue.length === 0) && (
+                <tr>
+                  <td colSpan="5" className="py-10 text-center text-sm text-slate-400 font-medium">
+                    No applications available.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

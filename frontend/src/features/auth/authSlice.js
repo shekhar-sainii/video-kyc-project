@@ -1,4 +1,5 @@
 import { createSlice } from '@reduxjs/toolkit';
+import { clearTokens } from '../../utils/token';
 
 const initialState = {
   isAuthenticated: false,
@@ -22,7 +23,7 @@ const authSlice = createSlice({
       state.user = null;
       state.role = null;
       state.isAuthChecked = true;
-      localStorage.removeItem('accessToken');
+      clearTokens();
     },
     authChecked(state) {
       state.isAuthChecked = true;

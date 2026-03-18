@@ -2,9 +2,34 @@ import axios from "axios";
 import ENV from "../../config/env";
 import {
   getAccessToken,
+  getRefreshToken,
   clearTokens,
   setTokens,
 } from "../../utils/token";
+
+let refreshRequest = null;
+
+const requestTokenRefresh = async () => {
+  const refreshToken = getRefreshToken();
+
+  if (!refreshToken) {
+    throw new Error("No refresh token available");
+  }
+
+  const response = await axios.post(
+    `${ENV.AUTH_SERVICE_URL}/auth/refresh-token`,
+    { refreshToken }
+  );
+
+  const { accessToken, refreshToken: newRefresh } = response.data.data;
+
+  setTokens(accessToken, newRefresh);
+
+  return {
+    accessToken,
+    refreshToken: newRefresh,
+  };
+};
 
 const createAxiosInstance = (baseURL) => {
   const instance = axios.create({
@@ -32,24 +57,20 @@ const createAxiosInstance = (baseURL) => {
     (res) => res,
     async (error) => {
       const original = error.config;
+      const isRefreshCall = original?.url?.includes("/auth/refresh-token");
 
       /* ---------- AUTO REFRESH ---------- */
-      if (error.response?.status === 401 && !original._retry) {
+      if (error.response?.status === 401 && !original?._retry && !isRefreshCall) {
         original._retry = true;
 
         try {
-          const refreshToken = localStorage.getItem("refreshToken");
+          if (!refreshRequest) {
+            refreshRequest = requestTokenRefresh().finally(() => {
+              refreshRequest = null;
+            });
+          }
 
-          const res = await axios.post(
-            `${ENV.AUTH_SERVICE_URL}/auth/refresh`,
-            { refreshToken }
-          );
-
-          const { accessToken, refreshToken: newRefresh } =
-            res.data.data;
-
-          setTokens(accessToken, newRefresh);
-
+          const { accessToken } = await refreshRequest;
           original.headers.Authorization = `Bearer ${accessToken}`;
 
           return instance(original);

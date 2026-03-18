@@ -47,6 +47,8 @@ const Navbar = () => {
   const isDark = useSelector((state) => state.theme.mode === "dark");
   const [profileOpen, setProfileOpen] = useState(false);
   const profileImageUrl = toImageUrl(user?.profileImage);
+  const isAdminUser = user?.role === "admin";
+  const isAdminPanel = isAdminUser && location.pathname.startsWith("/admin");
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -81,19 +83,21 @@ const Navbar = () => {
             </div>
             <div className="flex flex-col">
               <span className={`text-xl font-black tracking-tight leading-none ${isDark ? "text-white" : "text-[#1e1b4b]"}`}>
-                FinVerify
+                {isAdminPanel ? "Admin" : "FinVerify"}
               </span>
-              <span className="text-[9px] font-bold text-indigo-500 uppercase tracking-[0.2em] mt-1">Identity Pro</span>
+              <span className="text-[9px] font-bold text-indigo-500 uppercase tracking-[0.2em] mt-1">
+                {isAdminPanel ? "Control Panel" : "Identity Pro"}
+              </span>
             </div>
           </Link>
 
           {/* Desktop Navigation Links */}
-          <div className={`hidden md:flex gap-8 text-[11px] font-black uppercase tracking-widest ${isDark ? "text-slate-400" : "text-slate-500"}`}>
-            <NavLink to="/dashboard" label="Applications" isActive={isActive("/dashboard")} isDark={isDark} />
-            <NavLink to="/kyc-application" label="New KYC" isActive={isActive("/kyc-form")} isDark={isDark} />
-            {/* <NavLink to="/verify" label="Live Session" isActive={isActive("/verify")} isDark={isDark} /> */}
-            {/* <NavLink to="/dashboard" label="Live Session" isActive={isActive("/live-session")} isDark={isDark} /> */}
-          </div>
+          {!isAdminPanel && (
+            <div className={`hidden md:flex gap-8 text-[11px] font-black uppercase tracking-widest ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+              <NavLink to="/dashboard" label="Applications" isActive={isActive("/dashboard")} isDark={isDark} />
+              <NavLink to="/kyc-application" label="New KYC" isActive={isActive("/kyc-form")} isDark={isDark} />
+            </div>
+          )}
         </div>
 
         {/* RIGHT: Actions */}

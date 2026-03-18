@@ -62,6 +62,18 @@ class UserController {
     }
 }
 
+async getSecurityLogs(req, res, next) {
+    try {
+        const page = Math.max(Number(req.query.page) || 1, 1);
+        const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 100);
+        const search = typeof req.query.search === "string" ? req.query.search : "";
+        const data = await userService.getAdminSecurityLogs({ page, limit, search });
+        return ApiResponse.success(res, "Security logs fetched successfully", data);
+    } catch (error) {
+        next(error);
+    }
+}
+
 async deactivateUser(req, res, next) {
     try {
         const { id } = req.params;

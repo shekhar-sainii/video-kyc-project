@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import routes from "./routeConfig";
 import AppLayout from "../layouts/AppLayout";
 import ProtectedRoute from "../auth/ProtectedRoute";
+import PublicRoute from "../auth/PublicRoute";
 import PageLoader from "../components/common/PageLoader";
 
 const AppRoutes = () => {
@@ -24,6 +25,14 @@ const AppRoutes = () => {
               <ProtectedRoute permission={route.permission}>
                 {element}
               </ProtectedRoute>
+            );
+          }
+
+          if (route.guestOnly) {
+            element = (
+              <PublicRoute>
+                {element}
+              </PublicRoute>
             );
           }
 

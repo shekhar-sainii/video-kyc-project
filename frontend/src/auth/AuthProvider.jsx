@@ -8,19 +8,33 @@ import {
   logout,
 } from "../features/auth/authSlice";
 import authService from "../services/authService";
+import { getAccessToken, getRefreshToken, setTokens } from "../utils/token";
 
 const AuthProvider = ({ children }) => {
   const dispatch = useDispatch();
 
   useEffect(() => {
-    const token = localStorage.getItem("accessToken");
-    if (!token) {
-      dispatch(authChecked());
-      return;
-    }
-
     const restoreAuth = async () => {
       try {
+        let accessToken = getAccessToken();
+        const refreshToken = getRefreshToken();
+
+        if (!accessToken && refreshToken) {
+          const refreshResponse = await authService.refreshToken(refreshToken);
+          const {
+            accessToken: newAccessToken,
+            refreshToken: newRefreshToken,
+          } = refreshResponse.data.data;
+
+          setTokens(newAccessToken, newRefreshToken);
+          accessToken = newAccessToken;
+        }
+
+        if (!accessToken) {
+          dispatch(authChecked());
+          return;
+        }
+
         const res = await authService.getMe();
 
         dispatch(
@@ -30,8 +44,6 @@ const AuthProvider = ({ children }) => {
           })
         );
       } catch (err) {
-        // Token expired / invalid
-        localStorage.removeItem("accessToken");
         dispatch(logout());
       } finally {
         dispatch(authChecked());

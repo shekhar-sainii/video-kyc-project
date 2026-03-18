@@ -26,6 +26,18 @@ const kycService = {
   verifyKyc(formData) {
     return authAxios.post("/kyc/verify", formData);
   },
+
+  getAdminDashboard() {
+    return authAxios.get("/kyc/admin/dashboard");
+  },
+
+  getAdminQueue() {
+    return authAxios.get("/kyc/admin/queue");
+  },
+
+  getAdminApplicationDetail(id) {
+    return authAxios.get(`/kyc/admin/application/${id}`);
+  },
 };
 
 export default kycService;

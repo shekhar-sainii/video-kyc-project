@@ -18,6 +18,61 @@ class KYCRepository extends BaseRepository {
     return await this.model.find({ user: userId }).sort({ createdAt: -1 });
   }
 
+  async getDashboardSummary() {
+    const [totalApplicants, pendingReview, verifiedCount, rejectedCount] = await Promise.all([
+      this.model.countDocuments(),
+      this.model.countDocuments({ status: "Pending" }),
+      this.model.countDocuments({ status: "Verified" }),
+      this.model.countDocuments({ status: "Rejected" }),
+    ]);
+
+    return {
+      totalApplicants,
+      pendingReview,
+      verifiedCount,
+      rejectedCount,
+    };
+  }
+
+  async getRecentApplications(limit = 6) {
+    return await this.model
+      .find()
+      .populate("user", "name email")
+      .sort({ createdAt: -1 })
+      .limit(limit);
+  }
+
+  async getApplicationsTrend(days = 7) {
+    const startDate = new Date();
+    startDate.setHours(0, 0, 0, 0);
+    startDate.setDate(startDate.getDate() - (days - 1));
+
+    return await this.model.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: startDate },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            year: { $year: "$createdAt" },
+            month: { $month: "$createdAt" },
+            day: { $dayOfMonth: "$createdAt" },
+          },
+          apps: { $sum: 1 },
+        },
+      },
+      {
+        $sort: {
+          "_id.year": 1,
+          "_id.month": 1,
+          "_id.day": 1,
+        },
+      },
+    ]);
+  }
+
   async updateVerification(applicationId, verificationData) {
     return await this.model.findByIdAndUpdate(
       applicationId,
@@ -27,7 +82,16 @@ class KYCRepository extends BaseRepository {
   }
 
   async getPendingApplications() {
-    return await this.model.find({ status: "Pending" });
+    return await this.model
+      .find({ status: "Pending" })
+      .populate("user", "name email")
+      .sort({ createdAt: 1 });
+  }
+
+  async getApplicationForAdminById(applicationId) {
+    return await this.model
+      .findById(applicationId)
+      .populate("user", "name email profileImage");
   }
 }
 

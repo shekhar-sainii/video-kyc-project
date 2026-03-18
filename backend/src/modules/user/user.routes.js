@@ -41,6 +41,12 @@ router.get(
     userController.getAllUsers
 );
 
+router.get(
+    "/admin/security-logs",
+    roleMiddleware("admin"),
+    userController.getSecurityLogs
+);
+
 // Deactivate user
 router.patch(
     "/admin/deactivate/:id",

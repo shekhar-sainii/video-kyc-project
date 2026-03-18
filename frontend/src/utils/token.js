@@ -1,7 +1,11 @@
 // 1. Tokens aur Role dono ko ek saath save karein
 export const setTokens = (access, refresh, role) => {
-  localStorage.setItem("accessToken", access);
-  localStorage.setItem("refreshToken", refresh);
+  if (access) {
+    localStorage.setItem("accessToken", access);
+  }
+  if (refresh) {
+    localStorage.setItem("refreshToken", refresh);
+  }
   if (role) {
     localStorage.setItem("userRole", role);
   }
@@ -9,6 +13,8 @@ export const setTokens = (access, refresh, role) => {
 
 // 2. Access Token nikalne ke liye
 export const getAccessToken = () => localStorage.getItem("accessToken");
+
+export const getRefreshToken = () => localStorage.getItem("refreshToken");
 
 // 3. User Role nikalne ke liye (AuthCheck ke waqt kaam aayega)
 export const getUserRole = () => localStorage.getItem("userRole");
