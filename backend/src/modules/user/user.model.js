@@ -31,6 +31,23 @@ const userSchema = new mongoose.Schema(
             index: true,
         },
 
+        phone: {
+            type: String,
+            default: "",
+            trim: true,
+        },
+
+        address: {
+            type: String,
+            default: "",
+            trim: true,
+        },
+
+        profileImage: {
+            type: String,
+            default: "",
+        },
+
         password: {
             type: String,
             required: false, // null for OAuth-only users
@@ -53,13 +70,7 @@ const userSchema = new mongoose.Schema(
             type: Boolean,
             default: true,
         },
-
-        subscription: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: "Subscription",
-            default: null,
-        },
-
+        
         lastLoginAt: {
             type: Date,
         },

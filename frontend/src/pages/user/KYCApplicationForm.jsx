@@ -51,14 +51,9 @@ const handleSubmit = async (e) => {
 
   try {
     setLoading(true);
-
-    console.log("gfvyffgy");
-
     const signatureData = sigCanvas.current
       .getCanvas()
       .toDataURL("image/png");
-
-    console.log("signature created");
 
     const formData = new FormData();
 

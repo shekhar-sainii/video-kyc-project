@@ -3,6 +3,9 @@ class UserResponseDTO {
         this.id = user._id;
         this.name = user.name;
         this.email = user.email;
+        this.phone = user.phone || "";
+        this.address = user.address || "";
+        this.profileImage = user.profileImage || "";
         this.role = user.role;
         this.isEmailVerified = user.isEmailVerified;
         this.subscription = user.subscription;

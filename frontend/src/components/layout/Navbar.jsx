@@ -15,6 +15,28 @@ import {
   FiCheckCircle,
 } from "react-icons/fi";
 
+const toImageUrl = (profileImage) => {
+  if (!profileImage) {
+    return "";
+  }
+
+  if (profileImage.startsWith("http")) {
+    return profileImage;
+  }
+
+  const configuredUrl = import.meta.env.VITE_AUTH_SERVICE_URL;
+
+  if (!configuredUrl) {
+    return profileImage;
+  }
+
+  try {
+    return `${new URL(configuredUrl).origin}${profileImage}`;
+  } catch {
+    return profileImage;
+  }
+};
+
 const Navbar = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
@@ -24,6 +46,7 @@ const Navbar = () => {
   const { isAuthenticated, user } = useSelector((state) => state.auth);
   const isDark = useSelector((state) => state.theme.mode === "dark");
   const [profileOpen, setProfileOpen] = useState(false);
+  const profileImageUrl = toImageUrl(user?.profileImage);
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -94,9 +117,17 @@ const Navbar = () => {
                   isDark ? "bg-slate-800 border-slate-700 text-white" : "bg-slate-50 border-slate-100 text-slate-800 shadow-sm"
                 }`}
               >
-                <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center text-sm font-black shadow-lg shadow-indigo-500/20">
-                  {user?.name?.charAt(0).toUpperCase()}
-                </div>
+                {profileImageUrl ? (
+                  <img
+                    src={profileImageUrl}
+                    alt="Profile"
+                    className="w-9 h-9 rounded-xl object-cover shadow-lg shadow-indigo-500/20"
+                  />
+                ) : (
+                  <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center text-sm font-black shadow-lg shadow-indigo-500/20">
+                    {user?.name?.charAt(0).toUpperCase()}
+                  </div>
+                )}
                 <div className="text-left hidden sm:block">
                     <p className="text-[10px] font-black text-indigo-500 uppercase tracking-tighter leading-none mb-1">Authenticated</p>
                     <p className="text-xs font-bold truncate max-w-[80px] leading-none">

@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const morgan = require("morgan");
+const path = require("path");
 const errorMiddleware = require("./middlewares/error.middleware");
 const passport = require("passport");
 require("./modules/auth/strategies/google.strategy");
@@ -36,6 +37,7 @@ app.use("/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 
 app.use(express.json());
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // Health route
 app.get("/health", (req, res) => {
@@ -47,6 +49,7 @@ app.get("/health", (req, res) => {
 });
 
 // Main API prefix
+app.set("trust proxy", 1);
 app.use("/api", apiRoutes);
 
 // Error middleware (always last)

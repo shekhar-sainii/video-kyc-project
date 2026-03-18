@@ -14,11 +14,15 @@ class KYCRepository extends BaseRepository {
     return await this.model.find().sort({ createdAt: -1 });
   }
 
+  async getApplicationsByUser(userId) {
+    return await this.model.find({ user: userId }).sort({ createdAt: -1 });
+  }
+
   async updateVerification(applicationId, verificationData) {
     return await this.model.findByIdAndUpdate(
       applicationId,
       verificationData,
-      { new: true }
+      { returnDocument: "after" }
     );
   }
 

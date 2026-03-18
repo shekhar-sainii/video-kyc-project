@@ -2,6 +2,12 @@ const mongoose = require("mongoose");
 
 const kycSchema = new mongoose.Schema(
   {
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: false,
+    },
+
     panNumber: {
       type: String,
       required: true,

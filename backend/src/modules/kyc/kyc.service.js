@@ -1,5 +1,8 @@
 const kycRepository = require("./kyc.repository");
 const { compareFaces } = require("../../services/faceCompare.service");
+const sendEmail = require("../../utils/sendEmail");
+const kycStatusTemplate = require("../../templates/emails/kycStatus.template");
+const logger = require("../../utils/logger");
 
 const maskPan = (pan) =>
   pan.replace(/^(.{4}).*(.{2})$/, "$1••••$2");
@@ -21,37 +24,55 @@ class KYCService {
     }
 
     return await kycRepository.create({
+      user: data.userId,
       panNumber: data.panNumber,
       signature: data.signature,
       uploadedPhoto: data.uploadedPhoto,
     });
   }
 
-  async getApplications() {
-    const applications = await kycRepository.getAllApplications();
+  async getApplications(userId) {
+    const applications = userId
+      ? await kycRepository.getApplicationsByUser(userId)
+      : await kycRepository.getAllApplications();
 
     return applications.map((app) => ({
-      ...app._doc,
+      _id: app._id,
       panNumber: maskPan(app.panNumber),
+      status: app.status,
+      submittedAt: app.submittedAt,
     }));
   }
 
-  async verifyKyc(applicationId, verificationData) {
-    const application = await kycRepository.findById(applicationId);
+  async verifyKyc(userId, applicationId, verificationData) {
+    const application = await kycRepository.findById(applicationId, "user");
 
     if (!application) {
       throw new Error("Application not found");
     }
 
+    if (application.user?._id && application.user._id.toString() !== userId.toString()) {
+      const error = new Error("You are not authorized to verify this application");
+      error.statusCode = 403;
+      throw error;
+    }
+
     const panMatch =
       verificationData.extractedPan &&
       verificationData.extractedPan.toUpperCase() ===
-        application.panNumber.toUpperCase();
+      application.panNumber.toUpperCase();
 
-    const faceMatch = await compareFaces(
-      application.uploadedPhoto,
-      verificationData.selfieImage
-    );
+    let faceMatch;
+
+    try {
+      faceMatch = await compareFaces(
+        application.uploadedPhoto,
+        verificationData.selfieImage
+      );
+    } catch (error) {
+      error.statusCode = error.statusCode || 503;
+      throw error;
+    }
 
     let status = "Rejected";
     let verificationMessage = "";
@@ -67,7 +88,7 @@ class KYCService {
       verificationMessage = "PAN mismatch";
     }
 
-    return await kycRepository.updateVerification(applicationId, {
+    const updatedApplication = await kycRepository.updateVerification(applicationId, {
       panCardImage: verificationData.panCardImage,
       selfieImage: verificationData.selfieImage,
       faceMatch,
@@ -75,6 +96,36 @@ class KYCService {
       status,
       verificationMessage,
     });
+
+    if (application.user?.email) {
+      try {
+        await sendEmail({
+          to: application.user.email,
+          subject:
+            status === "Verified"
+              ? "Your Video KYC Has Been Verified"
+              : "Your Video KYC Verification Failed",
+          html: kycStatusTemplate({
+            name: application.user.name,
+            status,
+            panNumberMasked: maskPan(application.panNumber),
+            submittedAt: application.submittedAt,
+            reason: verificationMessage,
+          }),
+        });
+      } catch (emailError) {
+        logger.error({
+          message: "Failed to send KYC status email",
+          applicationId,
+          userId: application.user._id,
+          email: application.user.email,
+          error: emailError.message,
+          stack: emailError.stack,
+        });
+      }
+    }
+
+    return updatedApplication;
   }
 }
 

@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const upload = require("../../config/multer");
+const authMiddleware = require("../../middlewares/auth.middleware");
 const validate = require("../../middlewares/validate.middleware");
 
 const kycController = require("./kyc.controller");
@@ -10,6 +11,8 @@ const {
   submitKycSchema,
   verifyKycSchema,
 } = require("./kyc.validation");
+
+router.use(authMiddleware);
 
 router.post(
   "/submit",

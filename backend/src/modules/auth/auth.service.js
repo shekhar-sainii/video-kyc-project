@@ -40,8 +40,6 @@ class AuthService {
     }
 
     async createEmailVerification(userId) {
-        console.log("i am here ..");
-
         const token = generateRandomToken(32);
         const hashedToken = hashToken(token);
 

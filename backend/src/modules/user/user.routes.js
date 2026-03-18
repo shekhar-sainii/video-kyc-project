@@ -3,6 +3,7 @@ const userController = require("./user.controller");
 const authMiddleware = require("../../middlewares/auth.middleware");
 const roleMiddleware = require("../../middlewares/role.middleware");
 const validate = require("../../middlewares/validate.middleware");
+const upload = require("../../config/multer");
 const {
     updateProfileSchema,
     changePasswordSchema,
@@ -18,6 +19,7 @@ router.get("/me", userController.getProfile);
 
 router.patch(
     "/update-profile",
+    upload.single("profileImage"),
     validate(updateProfileSchema),
     userController.updateProfile
 );

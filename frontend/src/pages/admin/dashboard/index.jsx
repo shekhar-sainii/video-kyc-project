@@ -11,6 +11,7 @@ import {
   FiUsers, FiVideo, FiShield, FiCheckCircle, 
   FiActivity, FiZap, FiAlertCircle, FiArrowUpRight, FiSearch
 } from "react-icons/fi";
+import { useNavigate } from "react-router-dom";
 
 // Mock data: KYC Applications Volume
 const KYC_VOLUME_DATA = [
@@ -22,6 +23,7 @@ const KYC_VOLUME_DATA = [
 
 const Dashboard = () => {
   const isDark = useSelector((state) => state.theme.mode === "dark");
+  const navigate = useNavigate();
 
   return (
     <div className={`p-8 space-y-8 min-h-screen transition-colors duration-300
@@ -135,9 +137,9 @@ const Dashboard = () => {
             </thead>
             <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
               {[
-                { name: "Shekhar Saini", pan: "Match", score: "98%", status: "Pending" },
-                { name: "John Doe", pan: "Match", score: "94%", status: "Verified" },
-                { name: "Amit Kumar", pan: "Mismatch", score: "12%", status: "Rejected" },
+                { id: 1,name: "Shekhar Saini", pan: "Match", score: "98%", status: "Pending" },
+                { id: 2,name: "John Doe", pan: "Match", score: "94%", status: "Verified" },
+                { id: 3,name: "Amit Kumar", pan: "Mismatch", score: "12%", status: "Rejected" },
               ].map((user, i) => (
                 <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                   <td className="py-5">
@@ -167,7 +169,12 @@ const Dashboard = () => {
                     </span>
                   </td>
                   <td className="py-5 text-right">
-                    <button className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isDark ? 'bg-slate-800 hover:bg-slate-700' : 'bg-slate-50 hover:bg-indigo-600 hover:text-white'}`}>
+                    <button
+                    onClick={() => navigate(`/admin/kyc-review/${user.id}`)} // 3. Navigate on click
+                  className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                    isDark ? 'bg-slate-800 hover:bg-slate-700' : 'bg-slate-50 hover:bg-indigo-600 hover:text-white'
+                  }`}>
+
                       Review
                     </button>
                   </td>

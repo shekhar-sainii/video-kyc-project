@@ -17,7 +17,10 @@ class UserController {
     async updateProfile(req, res, next) {
         try {
             const userId = req.user.id;
-            const data = await userService.updateProfile(userId, req.body);
+            const data = await userService.updateProfile(userId, {
+                ...req.body,
+                profileImage: req.file ? req.file.path : undefined,
+            });
 
             return ApiResponse.success(res, "Profile updated successfully", data);
         } catch (error) {

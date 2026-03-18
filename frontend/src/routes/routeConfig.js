@@ -17,7 +17,9 @@ const ProfilePage = lazy(() => import("../pages/user/ProfilePage"));
 const DashboardPage = lazy(() => import("../pages/admin/dashboard"));
 const UsersAdminPage = lazy(() => import("../pages/admin/users/index"));
 const AuditLogs = lazy(() => import("../pages/admin/logs/index"));
-const KYCQueue = lazy(() => import("../pages/admin/KYCQueue"))
+const KYCQueue = lazy(() => import("../pages/admin/KYCQueue"));
+const AdminKYCReview = lazy(() => import("../pages/admin/dashboard/AdminKYCReview"));
+
 
 /* --- ERRORS --- */
 const NotFound404 = lazy(() => import("../pages/errors/NotFound404"));
@@ -33,13 +35,13 @@ const routes = [
 
   /* --- PROTECTED USER ROUTES (KYC FLOW) --- */
   // Page 2: Applications List (Dashboard)
-  { path: "/dashboard", component: UserDashboard, layout: "main" }, 
-  
+  { path: "/dashboard", component: UserDashboard, layout: "main" },
+
   // Page 1: KYC Application Form
-  { path: "/kyc-application", component: KYCApplicationForm, layout: "main" }, 
-  
+  { path: "/kyc-application", component: KYCApplicationForm, layout: "main" },
+
   // Page 3: Live Video KYC Session
-  { path: "/live-session/:id", component: VideoKYCSession, layout: "main"}, 
+  { path: "/live-session/:id", component: VideoKYCSession, layout: "main" },
 
   { path: "/profile", component: ProfilePage, layout: "main", protected: true },
 
@@ -52,13 +54,20 @@ const routes = [
     // permission: "admin"
   },
   {
+    path: "/admin/kyc-review/:id",
+    component: AdminKYCReview,
+    layout: "admin",
+    // protected: true,
+    // permission: "admin"
+  },
+  {
     path: "/admin/users",
     component: UsersAdminPage,
     layout: "admin",
     // protected: true,
     // permission: "admin"
   },
-   {
+  {
     path: "/admin/kyc-queue",
     component: KYCQueue,
     layout: "admin",

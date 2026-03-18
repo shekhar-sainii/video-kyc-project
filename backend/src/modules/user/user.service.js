@@ -1,9 +1,9 @@
 const bcrypt = require("bcryptjs");
 const UserRepository = require("./user.repository");
 const UserResponseDTO = require("./dtos/userResponse.dto");
+const { uploadImage } = require("../../services/cloudinary.service");
 
 class UserService {
-
     async getProfile(userId) {
         const user = await UserRepository.findById(userId);
 
@@ -17,9 +17,17 @@ class UserService {
     }
 
     async updateProfile(userId, data) {
-        const updatedUser = await UserRepository.updateById(userId, {
+        const updatePayload = {
             name: data.name,
-        });
+            phone: data.phone || "",
+            address: data.address || "",
+        };
+
+        if (typeof data.profileImage === "string") {
+            updatePayload.profileImage = await uploadImage(data.profileImage);
+        }
+
+        const updatedUser = await UserRepository.updateById(userId, updatePayload);
 
         if (!updatedUser) {
             const error = new Error("User not found");

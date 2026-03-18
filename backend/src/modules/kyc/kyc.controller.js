@@ -5,14 +5,13 @@ class KYCController {
   async submitKyc(req, res, next) {
     try {
       const { panNumber, signature } = req.body;
-
       const uploadedPhoto = req.file ? req.file.path : null;
-
       if (!uploadedPhoto) {
         throw new Error("Uploaded photo is required");
       }
 
       const result = await kycService.submitKyc({
+        userId: req.user.id,
         panNumber,
         signature,
         uploadedPhoto,
@@ -30,7 +29,7 @@ class KYCController {
 
   async getApplications(req, res, next) {
     try {
-      const applications = await kycService.getApplications();
+      const applications = await kycService.getApplications(req.user.id);
 
       return res.status(200).json({
         success: true,
@@ -58,8 +57,13 @@ class KYCController {
       }
 
       const extractedPan = await extractPanNumber(panCardImage);
+      console.log(extractedPan, "extractedPan");
 
-      const result = await kycService.verifyKyc(applicationId, {
+      if (!extractedPan) {
+        throw new Error("PAN number could not be extracted");
+      }
+
+      const result = await kycService.verifyKyc(req.user.id, applicationId, {
         extractedPan,
         panCardImage,
         selfieImage,

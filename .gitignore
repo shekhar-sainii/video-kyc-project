@@ -9,6 +9,7 @@ backend/node_modules/
 # =========================
 frontend/.env
 frontend/.env.local
+frontend/.cert/
 backend/.env
 
 # =========================
@@ -58,6 +59,8 @@ coverage/
 # Face API Models (optional if very large)
 # =========================
 backend/src/models/
+backend/src/uploads/
+
 
 # =========================
 # Cache

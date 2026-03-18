@@ -17,8 +17,6 @@ const authMiddleware = async (req, res, next) => {
     const decoded = jwt.verify(token, JWT_SECRET);
 
     const user = await User.findById(decoded.id);
-    console.log(user,"user");
-    
 
     if (!user || !user.isActive) {
       return ApiResponse.error(res, "Unauthorized", 401);
