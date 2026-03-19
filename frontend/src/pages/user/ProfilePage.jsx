@@ -230,7 +230,6 @@ const ProfilePage = () => {
                     type="file"
                     accept="image/*"
                     className="hidden"
-                    capture="user"
                     onChange={handleImageChange}
                   />
                 </button>

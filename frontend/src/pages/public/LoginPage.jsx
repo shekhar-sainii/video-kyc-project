@@ -6,6 +6,7 @@ import authService from "../../services/authService";
 import { setTokens } from "../../utils/token";
 import { useNavigate, Link } from "react-router-dom";
 import GoogleLoginButton from "../../auth/GoogleLoginButton";
+import Swal from "sweetalert2";
 
 // Icons (Tasks ke hisaab se updated)
 import { FiMail, FiLock, FiChevronRight, FiVideo, FiShield, FiEye, FiEyeOff, FiCheckCircle } from "react-icons/fi";
@@ -18,7 +19,9 @@ const LoginPage = () => {
 
   const [form, setForm] = useState({ email: "", password: "" });
   const [loading, setLoading] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
   const [error, setError] = useState("");
+  const [showResendVerification, setShowResendVerification] = useState(false);
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -31,6 +34,7 @@ const LoginPage = () => {
     try {
       setLoading(true);
       setError("");
+      setShowResendVerification(false);
       const res = await authService.login(form);
       const { user, accessToken, refreshToken } = res.data.data;
       setTokens(accessToken, refreshToken, user.role);
@@ -42,9 +46,41 @@ const LoginPage = () => {
         navigate("/"); 
       }
     } catch (err) {
-      setError(err?.response?.data?.message || "Invalid credentials");
+      const responseMessage = err?.response?.data?.message || "Invalid credentials";
+      const responseCode = err?.response?.data?.code;
+      setError(responseMessage);
+      setShowResendVerification(
+        responseCode === "EMAIL_NOT_VERIFIED" ||
+        responseMessage === "Please verify your email first"
+      );
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    if (!form.email.trim()) {
+      setError("Enter your email first to resend verification.");
+      return;
+    }
+
+    try {
+      setResendLoading(true);
+      await authService.resendVerification(form.email.trim());
+      setError("");
+      setShowResendVerification(false);
+      await Swal.fire({
+        icon: "success",
+        title: "Verification email sent",
+        text: "Please check your inbox and spam folder.",
+        confirmButtonColor: "#4f46e5",
+        background: isDark ? "#1a2b4b" : "#fff",
+        color: isDark ? "#fff" : "#1a2b4b",
+      });
+    } catch (err) {
+      setError(err?.response?.data?.message || "Could not resend verification email.");
+    } finally {
+      setResendLoading(false);
     }
   };
 
@@ -146,6 +182,16 @@ const LoginPage = () => {
             {error && (
               <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-2xl">
                 <p className="text-red-500 text-xs font-bold tracking-tight">⚠️ {error}</p>
+                {showResendVerification && (
+                  <button
+                    type="button"
+                    onClick={handleResendVerification}
+                    disabled={resendLoading}
+                    className="mt-3 inline-flex items-center justify-center rounded-xl bg-red-500 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-white transition hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {resendLoading ? "Sending..." : "Resend Verification Email"}
+                  </button>
+                )}
               </div>
             )}
 

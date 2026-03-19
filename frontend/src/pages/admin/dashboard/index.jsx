@@ -55,7 +55,7 @@ const Dashboard = () => {
           <h1 className="text-2xl font-black tracking-tight uppercase italic sm:text-3xl">Compliance Dashboard</h1>
           <p className="text-xs font-medium text-slate-500 sm:text-sm">Monitoring real-time Identity Verifications & AI Vision Scores.</p>
         </div>
-        <div className="flex w-full flex-col gap-3 sm:flex-row md:w-auto">
+        {/* <div className="flex w-full flex-col gap-3 sm:flex-row md:w-auto">
           <div className="relative flex-1">
              <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
              <input type="text" placeholder="Search PAN/Application ID..." className={`w-full rounded-xl border py-2.5 pl-10 pr-4 text-sm outline-none focus:border-indigo-500 ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`} />
@@ -63,7 +63,7 @@ const Dashboard = () => {
           <button className="rounded-xl bg-indigo-600 px-5 py-2.5 text-[11px] font-black uppercase tracking-widest text-white shadow-lg shadow-indigo-500/20 transition hover:bg-indigo-700 sm:px-6">
             Reports
           </button>
-        </div>
+        </div> */}
       </div>
 
       {/* STATS GRID - KYC Specific Metrics */}

@@ -2,6 +2,7 @@ import React from "react";
 import {
   Fragment,
   memo,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -78,6 +79,10 @@ const Table = ({
     (state) => state.theme.mode === "dark"
   );
 
+  useEffect(() => {
+    setPageSize(count);
+  }, [count]);
+
   /* ---------------- HANDLERS ---------------- */
   const handlePageSizeChange = (e) => {
     const val = Number(e.target.value);
@@ -100,10 +105,19 @@ const Table = ({
   };
 
   const pageOptions = useMemo(() => {
-    const arr = [];
-    for (let i = 10; i <= total; i += 10) arr.push(i);
-    return arr;
-  }, [total]);
+    const preferredOptions = [10, 20, 50, 100, 1000];
+    const validOptions = preferredOptions.filter((option) => option <= Math.max(total, count, 10));
+
+    if (!validOptions.length) {
+      return [10];
+    }
+
+    if (!validOptions.includes(count)) {
+      validOptions.push(count);
+    }
+
+    return [...new Set(validOptions)].sort((left, right) => left - right);
+  }, [count, total]);
 
   /* ================= LOADING ================= */
   if (isLoading) {
@@ -258,7 +272,9 @@ const Table = ({
           `}
         >
           {isCount && (
-            <select
+            <label className="flex items-center gap-2 text-xs font-medium">
+              <span className="whitespace-nowrap">Rows per page</span>
+              <select
               value={pageSize}
               onChange={handlePageSizeChange}
               className={`px-2 py-1 rounded border
@@ -266,13 +282,14 @@ const Table = ({
                   ? "bg-gray-800 border-gray-700"
                   : "bg-white border-gray-300"}
               `}
-            >
-              {pageOptions.map((opt) => (
-                <option key={opt} value={opt}>
-                  {opt}
-                </option>
-              ))}
-            </select>
+              >
+                {pageOptions.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            </label>
           )}
 
           <div className="flex flex-wrap items-center gap-2">

@@ -14,6 +14,11 @@ const KYCQueue = () => {
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [queue, setQueue] = useState([]);
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 10,
+    total: 0,
+  });
   const [summary, setSummary] = useState({
     total: 0,
     slaCompliance: "100%",
@@ -25,9 +30,19 @@ const KYCQueue = () => {
     const fetchQueue = async () => {
       try {
         setLoading(true);
-        const res = await kycService.getAdminQueue();
-        setQueue(res?.data?.data?.queue || []);
-        setSummary(res?.data?.data?.summary || {});
+        const res = await kycService.getAdminQueue({
+          page: pagination.page,
+          limit: pagination.limit,
+        });
+        const payload = res?.data?.data || {};
+        setQueue(payload.queue || []);
+        setSummary(payload.summary || {});
+        setPagination((prev) => ({
+          ...prev,
+          page: payload.pagination?.page || prev.page,
+          limit: payload.pagination?.limit || prev.limit,
+          total: payload.pagination?.total || 0,
+        }));
       } catch (error) {
         const message = error?.response?.data?.message || "Failed to load KYC queue.";
         Swal.fire("Error", message, "error");
@@ -37,7 +52,7 @@ const KYCQueue = () => {
     };
 
     void fetchQueue();
-  }, []);
+  }, [pagination.page, pagination.limit]);
 
   const filteredQueue = queue.filter((row) => {
     const term = searchTerm.toLowerCase();
@@ -164,9 +179,18 @@ const KYCQueue = () => {
         <Table
           data={filteredQueue}
           columns={columns}
-          count={10}
-          total={filteredQueue.length}
-          result={() => {}}
+          page={pagination.page}
+          count={pagination.limit}
+          total={searchTerm ? filteredQueue.length : pagination.total}
+          result={(event) => {
+            if (event.event === "page") {
+              setPagination((prev) => ({ ...prev, page: event.value }));
+            }
+
+            if (event.event === "count") {
+              setPagination((prev) => ({ ...prev, page: 1, limit: event.value }));
+            }
+          }}
         />
       </div>
     </div>

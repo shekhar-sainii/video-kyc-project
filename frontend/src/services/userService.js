@@ -41,8 +41,8 @@ const userService = {
    * Get list of all users (Admin only)
    * Route: GET /api/v1/users/admin/all-users
    */
-  getAllUsers() {
-    return authAxios.get("/user/admin/all-users");
+  getAllUsers(params) {
+    return authAxios.get("/user/admin/all-users", { params });
   },
 
   getSecurityLogs(params) {

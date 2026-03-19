@@ -41,6 +41,10 @@ const authService = {
     return authAxios.get(`/auth/verify-email?token=${token}`);
   },
 
+  resendVerification(email) {
+    return authAxios.post("/auth/resend-verification", { email });
+  },
+
   logout(refreshToken) {
     return authAxios.post('/auth/logout', { refreshToken });
   }

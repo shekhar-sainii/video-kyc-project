@@ -33,8 +33,8 @@ const kycService = {
     return authAxios.get("/kyc/admin/dashboard");
   },
 
-  getAdminQueue() {
-    return authAxios.get("/kyc/admin/queue");
+  getAdminQueue(params) {
+    return authAxios.get("/kyc/admin/queue", { params });
   },
 
   getAdminApplicationDetail(id) {

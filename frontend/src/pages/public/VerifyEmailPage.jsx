@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { FiAlertCircle, FiCheckCircle, FiLoader, FiMail, FiShield } from "react-icons/fi";
@@ -9,6 +9,7 @@ const VerifyEmailPage = () => {
   const [searchParams] = useSearchParams();
   const [status, setStatus] = useState("loading");
   const [message, setMessage] = useState("Verifying your email token...");
+  const verificationStartedRef = useRef(false);
 
   useEffect(() => {
     const token = searchParams.get("token");
@@ -18,6 +19,12 @@ const VerifyEmailPage = () => {
       setMessage("Verification token is missing or invalid.");
       return;
     }
+
+    if (verificationStartedRef.current) {
+      return;
+    }
+
+    verificationStartedRef.current = true;
 
     const runVerification = async () => {
       try {

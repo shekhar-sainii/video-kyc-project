@@ -88,6 +88,22 @@ class KYCRepository extends BaseRepository {
       .sort({ createdAt: 1 });
   }
 
+  async getPendingApplicationsPaginated({ page = 1, limit = 10 } = {}) {
+    const skip = (page - 1) * limit;
+
+    const [applications, total] = await Promise.all([
+      this.model
+        .find({ status: "Pending" })
+        .populate("user", "name email")
+        .sort({ createdAt: 1 })
+        .skip(skip)
+        .limit(limit),
+      this.model.countDocuments({ status: "Pending" }),
+    ]);
+
+    return { applications, total };
+  }
+
   async getApplicationForAdminById(applicationId) {
     return await this.model
       .findById(applicationId)

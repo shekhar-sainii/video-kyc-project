@@ -55,7 +55,9 @@ class UserController {
 
     async getAllUsers(req, res, next) {
     try {
-        const data = await userService.getAllUsers();
+        const page = Math.max(Number(req.query.page) || 1, 1);
+        const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 1000);
+        const data = await userService.getAllUsers({ page, limit });
         return ApiResponse.success(res, "Users fetched successfully", data);
     } catch (error) {
         next(error);

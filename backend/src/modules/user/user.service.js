@@ -185,10 +185,26 @@ class UserService {
         return true;
     }
 
-async getAllUsers() {
-    const users = await UserRepository.model.find();
+async getAllUsers({ page = 1, limit = 10 } = {}) {
+    const skip = (page - 1) * limit;
+    const [users, totalUsers] = await Promise.all([
+        UserRepository.model
+            .find()
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit),
+        UserRepository.model.countDocuments(),
+    ]);
 
-    return users.map(user => new UserResponseDTO(user));
+    return {
+        users: users.map((user) => new UserResponseDTO(user)),
+        pagination: {
+            currentPage: page,
+            limit,
+            totalUsers,
+            totalPages: Math.max(1, Math.ceil(totalUsers / limit)),
+        },
+    };
 }
 
 async getAdminSecurityLogs() {

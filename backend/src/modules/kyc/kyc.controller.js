@@ -17,7 +17,9 @@ class KYCController {
 
   async getAdminQueue(req, res, next) {
     try {
-      const data = await kycService.getAdminQueue();
+      const page = Math.max(Number(req.query.page) || 1, 1);
+      const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 1000);
+      const data = await kycService.getAdminQueue({ page, limit });
 
       return res.status(200).json({
         success: true,

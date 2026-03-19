@@ -17,18 +17,25 @@ const AdminUsers = () => {
 
   useEffect(() => {
     void fetchUsers();
-  }, [pagination.currentPage]);
+  }, [pagination.currentPage, pagination.limit]);
 
   const fetchUsers = async () => {
     try {
-      setLoading(false);
-      const res = await userService.getAllUsers();
-      const allUsers = res?.data?.data || [];
+      setLoading(true);
+      const res = await userService.getAllUsers({
+        page: pagination.currentPage,
+        limit: pagination.limit,
+      });
+      const payload = res?.data?.data || {};
+      const rows = payload?.users || [];
+      const nextPagination = payload?.pagination || {};
 
-      setUsers(allUsers);
+      setUsers(rows);
       setPagination((prev) => ({
         ...prev,
-        totalUsers: allUsers.length,
+        currentPage: nextPagination.currentPage || prev.currentPage,
+        limit: nextPagination.limit || prev.limit,
+        totalUsers: nextPagination.totalUsers || 0,
       }));
     } catch (error) {
       const message = error?.response?.data?.message || "Failed to load users.";
@@ -95,50 +102,61 @@ const AdminUsers = () => {
   };
 
   const handleExportCsv = () => {
-    if (!users.length) {
-      Swal.fire("Info", "No users available to export.", "info");
-      return;
-    }
+    void (async () => {
+      try {
+        const exportLimit = Math.min(Math.max(pagination.totalUsers || 1000, 10), 1000);
+        const res = await userService.getAllUsers({ page: 1, limit: exportLimit });
+        const exportUsers = res?.data?.data?.users || [];
 
-    const headers = [
-      "Name",
-      "Email",
-      "Role",
-      "Status",
-      "Email Verified",
-      "Joined On",
-    ];
+        if (!exportUsers.length) {
+          Swal.fire("Info", "No users available to export.", "info");
+          return;
+        }
 
-    const escapeCsvValue = (value) => {
-      const stringValue = String(value ?? "");
-      return `"${stringValue.replace(/"/g, '""')}"`;
-    };
+        const headers = [
+          "Name",
+          "Email",
+          "Role",
+          "Status",
+          "Email Verified",
+          "Joined On",
+        ];
 
-    const rows = users.map((user) => [
-      user.name,
-      user.email,
-      user.role,
-      user.isActive ? "Active" : "Inactive",
-      user.isEmailVerified ? "Verified" : "Pending",
-      user.createdAt ? new Date(user.createdAt).toLocaleString() : "N/A",
-    ]);
+        const escapeCsvValue = (value) => {
+          const stringValue = String(value ?? "");
+          return `"${stringValue.replace(/"/g, '""')}"`;
+        };
 
-    const csvContent = [
-      headers.map(escapeCsvValue).join(","),
-      ...rows.map((row) => row.map(escapeCsvValue).join(",")),
-    ].join("\n");
+        const rows = exportUsers.map((user) => [
+          user.name,
+          user.email,
+          user.role,
+          user.isActive ? "Active" : "Inactive",
+          user.isEmailVerified ? "Verified" : "Pending",
+          user.createdAt ? new Date(user.createdAt).toLocaleString() : "N/A",
+        ]);
 
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    const stamp = new Date().toISOString().slice(0, 10);
+        const csvContent = [
+          headers.map(escapeCsvValue).join(","),
+          ...rows.map((row) => row.map(escapeCsvValue).join(",")),
+        ].join("\n");
 
-    link.href = url;
-    link.setAttribute("download", `admin-users-${stamp}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+        const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        const stamp = new Date().toISOString().slice(0, 10);
+
+        link.href = url;
+        link.setAttribute("download", `admin-users-${stamp}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      } catch (error) {
+        const message = error?.response?.data?.message || "Failed to export users.";
+        Swal.fire("Error", message, "error");
+      }
+    })();
   };
 
   return (
@@ -161,9 +179,9 @@ const AdminUsers = () => {
           >
             <FiDownload /> Export CSV
           </button>
-          <button className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest shadow-xl shadow-indigo-500/20 hover:bg-indigo-700 transition-all">
+          {/* <button className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest shadow-xl shadow-indigo-500/20 hover:bg-indigo-700 transition-all">
             Compliance Audit
-          </button>
+          </button> */}
         </div>
       </div>
 
@@ -176,6 +194,9 @@ const AdminUsers = () => {
         onUpdateStatus={onUpdateStatus}
         onPageChange={(page) =>
           setPagination((prev) => ({ ...prev, currentPage: page }))
+        }
+        onLimitChange={(limit) =>
+          setPagination((prev) => ({ ...prev, currentPage: 1, limit }))
         }
       />
     </div>

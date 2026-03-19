@@ -120,8 +120,9 @@ class KYCService {
     };
   }
 
-  async getAdminQueue() {
-    const pendingApplications = await kycRepository.getPendingApplications();
+  async getAdminQueue({ page = 1, limit = 10 } = {}) {
+    const { applications: pendingApplications, total } =
+      await kycRepository.getPendingApplicationsPaginated({ page, limit });
 
     const queue = pendingApplications.map((application) => {
       const submittedAt = application.submittedAt || application.createdAt;
@@ -150,20 +151,25 @@ class KYCService {
       };
     });
 
-    const total = queue.length;
     const criticalCount = queue.filter((item) => item.priority === "Critical").length;
     const highCount = queue.filter((item) => item.priority === "High").length;
-    const averageReviewTime = total
+    const averageReviewTime = queue.length
       ? `${(
           queue.reduce((sum, item) => {
             const ageMinutes = (Date.now() - new Date(item.submittedAt).getTime()) / (1000 * 60);
             return sum + ageMinutes;
-          }, 0) / total
+          }, 0) / queue.length
         ).toFixed(1)}m`
       : "0.0m";
 
     return {
       queue,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
+      },
       summary: {
         total,
         slaCompliance: total ? `${Math.max(0, 100 - Math.round((criticalCount / total) * 100))}%` : "100%",

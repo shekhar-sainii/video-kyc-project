@@ -24,5 +24,4 @@ export const clearTokens = () => {
   localStorage.removeItem("accessToken");
   localStorage.removeItem("refreshToken");
   localStorage.removeItem("userRole"); // Role ko delete karna zaroori hai
-  localStorage.removeItem("theme"); // Optional: Agar theme reset karni ho toh
 };
