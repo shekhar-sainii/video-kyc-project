@@ -99,10 +99,11 @@ class KYCController {
       }
 
       const extractedPan = await extractPanNumber(panCardImage);
-      console.log(extractedPan, "extractedPan");
 
       if (!extractedPan) {
-        throw new Error("PAN number could not be extracted");
+        const error = new Error("PAN number could not be extracted. Please hold the PAN card closer and keep it steady.");
+        error.statusCode = 422;
+        throw error;
       }
 
       const result = await kycService.verifyKyc(req.user.id, applicationId, {
@@ -114,7 +115,14 @@ class KYCController {
       return res.status(200).json({
         success: true,
         message: "Verification completed",
-        data: result,
+        data: {
+          applicationId: result._id,
+          faceMatch: result.faceMatch,
+          faceMatchScore: result.faceMatchScore,
+          panMatch: result.panMatch,
+          status: result.status,
+          verificationMessage: result.verificationMessage,
+        },
       });
     } catch (error) {
       next(error);

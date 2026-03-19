@@ -41,6 +41,11 @@ const kycSchema = new mongoose.Schema(
       default: null,
     },
 
+    faceMatchScore: {
+      type: Number,
+      default: null,
+    },
+
     panMatch: {
       type: Boolean,
       default: null,

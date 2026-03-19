@@ -7,6 +7,21 @@ const logger = require("../../utils/logger");
 const maskPan = (pan) =>
   pan.replace(/^(.{4}).*(.{2})$/, "$1••••$2");
 
+const getPanDistance = (left, right) => {
+  if (!left || !right || left.length !== right.length) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  let distance = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) {
+      distance += 1;
+    }
+  }
+
+  return distance;
+};
+
 class KYCService {
   async getAdminApplicationDetail(applicationId) {
     const application = await kycRepository.getApplicationForAdminById(applicationId);
@@ -36,8 +51,7 @@ class KYCService {
       faceMatch: application.faceMatch,
       panMatch: application.panMatch,
       verificationMessage: application.verificationMessage,
-      faceMatchScore:
-        application.faceMatch === null ? null : application.faceMatch ? 100 : 0,
+      faceMatchScore: application.faceMatchScore,
     };
   }
 
@@ -199,15 +213,15 @@ class KYCService {
       throw error;
     }
 
-    const panMatch =
-      verificationData.extractedPan &&
-      verificationData.extractedPan.toUpperCase() ===
-      application.panNumber.toUpperCase();
+    const normalizedExtractedPan = verificationData.extractedPan?.toUpperCase() || "";
+    const normalizedApplicationPan = application.panNumber.toUpperCase();
+    const panDistance = getPanDistance(normalizedExtractedPan, normalizedApplicationPan);
+    const panMatch = normalizedExtractedPan && panDistance <= 1;
 
-    let faceMatch;
+    let faceMatchResult;
 
     try {
-      faceMatch = await compareFaces(
+      faceMatchResult = await compareFaces(
         application.uploadedPhoto,
         verificationData.selfieImage
       );
@@ -215,6 +229,8 @@ class KYCService {
       error.statusCode = error.statusCode || 503;
       throw error;
     }
+
+    const faceMatch = faceMatchResult.matched;
 
     let status = "Rejected";
     let verificationMessage = "";
@@ -227,13 +243,14 @@ class KYCService {
     } else if (!faceMatch) {
       verificationMessage = "Face mismatch";
     } else {
-      verificationMessage = "PAN mismatch";
+      verificationMessage = `PAN mismatch${normalizedExtractedPan ? ` (detected ${normalizedExtractedPan})` : ""}`;
     }
 
     const updatedApplication = await kycRepository.updateVerification(applicationId, {
       panCardImage: verificationData.panCardImage,
       selfieImage: verificationData.selfieImage,
       faceMatch,
+      faceMatchScore: faceMatchResult.score,
       panMatch,
       status,
       verificationMessage,

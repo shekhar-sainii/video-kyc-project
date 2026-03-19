@@ -130,16 +130,14 @@ const UserDashboard = () => {
 
                 {/* Actions */}
                 <div className="flex items-center gap-3">
-                  {app.status === "Pending" || app.status === "Rejected" ? (
+                  {app.status === "Pending" ? (
                     <button 
                       onClick={() => navigate(`/live-session/${app._id || app.id}`)}
                       className={`flex-1 lg:flex-none flex items-center justify-center gap-3 px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-[0.1em] text-white shadow-lg transition-all active:scale-95 ${
-                        app.status === "Pending"
-                          ? "bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/20"
-                          : "bg-amber-500 hover:bg-amber-600 shadow-amber-500/20"
+                        "bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/20"
                       }`}
                     >
-                      <FiVideo size={18} /> {app.status === "Pending" ? "Start Video KYC" : "Retry Video KYC"}
+                      <FiVideo size={18} /> Start Video KYC
                     </button>
                   ) : (
                     <div className={`px-6 py-4 rounded-2xl border-2 flex items-center gap-3 text-xs font-black uppercase tracking-widest ${

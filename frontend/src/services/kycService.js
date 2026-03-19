@@ -24,7 +24,9 @@ const kycService = {
    * Body: multipart/form-data with applicationId, panCardImage (file), selfieImage (file)
    */
   verifyKyc(formData) {
-    return authAxios.post("/kyc/verify", formData);
+    return authAxios.post("/kyc/verify", formData, {
+      timeout: 45000,
+    });
   },
 
   getAdminDashboard() {

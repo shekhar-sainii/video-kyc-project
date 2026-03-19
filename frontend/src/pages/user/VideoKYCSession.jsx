@@ -478,7 +478,7 @@ const VideoKYCSession = () => {
 
       const res = await kycService.verifyKyc(formData);
       const verificationData = res?.data?.data ?? {};
-      const { face_match, pan_match, status, message } = verificationData;
+      const { faceMatch, panMatch, status, verificationMessage } = verificationData;
 
       if (status === "Verified") {
         Swal.fire({
@@ -488,9 +488,9 @@ const VideoKYCSession = () => {
           confirmButtonColor: "#4f46e5",
         }).then(() => navigate("/dashboard"));
       } else {
-        const reason = message || (
-          !face_match && !pan_match ? "Face mismatch and PAN mismatch" :
-          !face_match ? "Face mismatch" : "PAN mismatch"
+        const reason = verificationMessage || (
+          !faceMatch && !panMatch ? "Face mismatch and PAN mismatch" :
+          !faceMatch ? "Face mismatch" : "PAN mismatch"
         );
         Swal.fire({
           icon: "error",
@@ -500,7 +500,10 @@ const VideoKYCSession = () => {
         }).then(() => navigate("/dashboard"));
       }
     } catch (err) {
-      const message = err?.response?.data?.message || "Verification failed. Please try again.";
+      const message =
+        err?.code === "ECONNABORTED"
+          ? "Verification is taking longer than expected. Please try again."
+          : err?.response?.data?.message || "Verification failed. Please try again.";
       Swal.fire("Error", message, "error").then(() => navigate("/dashboard"));
     }
   };
