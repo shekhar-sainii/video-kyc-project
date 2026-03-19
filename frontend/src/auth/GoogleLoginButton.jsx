@@ -35,7 +35,7 @@ const GoogleLoginButton = () => {
 
       // 2. Calling the UTILITY function (not state)
       // Ye aapke localStorage/cookies mein tokens set kar dega
-      setTokens(accessToken, refreshToken);
+      setTokens(accessToken, refreshToken, user.role);
 
       // 3. Update Redux Store
       dispatch(
@@ -76,7 +76,7 @@ const GoogleLoginButton = () => {
     if (role === 'admin' || role === 'manager') {
       navigate('/admin');
     } else {
-      navigate('/dashboard'); // Production SaaS flow ke hisaab se dashboard par bhejein
+      navigate('/');
     }
   }, [isAuthenticated, role, navigate]);
 

@@ -5,10 +5,10 @@ import { loginSuccess } from "../../features/auth/authSlice";
 import authService from "../../services/authService";
 import { setTokens } from "../../utils/token";
 import { useNavigate, Link } from "react-router-dom";
+import GoogleLoginButton from "../../auth/GoogleLoginButton";
 
 // Icons (Tasks ke hisaab se updated)
 import { FiMail, FiLock, FiChevronRight, FiVideo, FiShield, FiEye, FiEyeOff, FiCheckCircle } from "react-icons/fi";
-import { FcGoogle } from "react-icons/fc";
 
 const LoginPage = () => {
   const dispatch = useDispatch();
@@ -166,13 +166,7 @@ const LoginPage = () => {
           </div>
 
           {/* Social login kept for modern UI feel */}
-          <div
-            className={`flex items-center justify-center gap-3 py-3.5 border-2 rounded-2xl cursor-pointer transition-all duration-200 shadow-sm
-              ${isDark ? "border-slate-700 bg-slate-800/50 hover:bg-slate-800 text-white" : "border-slate-100 bg-white hover:bg-slate-50 text-slate-700"}`}
-          >
-            <FcGoogle size={22} />
-            <span className="text-sm font-bold">Sign in with Google</span>
-          </div>
+          <GoogleLoginButton />
 
           <p className="text-center mt-10 text-xs font-bold text-slate-500 uppercase tracking-tight">
             Need an account? <Link to="/register" className="text-indigo-600 font-black hover:underline">Apply for KYC</Link>
