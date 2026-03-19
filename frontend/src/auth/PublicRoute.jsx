@@ -11,7 +11,7 @@ const PublicRoute = ({ children }) => {
   }
 
   if (isAuthenticated) {
-    return <Navigate to={role === "admin" ? "/admin" : "/dashboard"} replace />;
+    return <Navigate to={role === "admin" ? "/admin" : "/"} replace />;
   }
 
   return children;

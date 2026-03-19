@@ -6,6 +6,7 @@ const resetTemplate = require("../../templates/emails/resetPassword.template");
 const { FRONTEND_URL } = require("../../config/env");
 const { OAuth2Client } = require('google-auth-library');
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+const {StatusCodes} = require("http-status-codes")
 
 class AuthController {
     async resendVerification(req, res, next) {
@@ -49,7 +50,7 @@ class AuthController {
                 res,
                 "Registered successfully. Please verify your email.",
                 user,
-                201
+                StatusCodes.CREATED
             );
         } catch (error) {
             next(error);
@@ -113,7 +114,7 @@ async googleCallback(req, res, next) {
         const { token } = req.query; 
 
         if (!token) {
-            return res.status(400).json({ message: "Token is required" });
+            return res.status(StatusCodes.BAD_REQUEST).json({ message: "Token is required" });
         }
 
         const ticket = await client.verifyIdToken({
@@ -130,13 +131,12 @@ async googleCallback(req, res, next) {
 
         const user = await authService.handleGoogleOAuth(profile);
 
-        // AB YEH WORK KAREGA (Service mein method add karne ke baad)
         const accessToken = authService.generateAccessToken({
             id: user._id,
             role: user.role,
         });
         
-        const refreshToken = authService.generateRandomToken(64); // Length specify kar sakte hain
+        const refreshToken = authService.generateRandomToken(64); 
 
         await authService.saveRefreshToken(user._id, refreshToken);
 

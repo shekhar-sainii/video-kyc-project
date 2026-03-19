@@ -11,17 +11,17 @@ const refreshTokenSchema = new mongoose.Schema(
 
     token: {
       type: String,
-      required: true, // store hashed token
+      required: true, 
     },
 
     expiresAt: {
       type: Date,
       required: true,
-      index: { expires: 0 }, // auto delete when expired (TTL index)
+      index: { expires: 0 }, 
     },
 
     deviceInfo: {
-      type: String, // optional (browser/device tracking)
+      type: String, 
     },
   },
   { timestamps: true }

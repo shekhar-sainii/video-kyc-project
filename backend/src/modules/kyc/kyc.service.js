@@ -4,6 +4,7 @@ const { extractPanNumber } = require("../../services/ocr.service");
 const sendEmail = require("../../utils/sendEmail");
 const kycStatusTemplate = require("../../templates/emails/kycStatus.template");
 const logger = require("../../utils/logger");
+const {StatusCodes} = require("http-status-codes")
 
 const maskPan = (pan) =>
   pan.replace(/^(.{4}).*(.{2})$/, "$1••••$2");
@@ -37,7 +38,7 @@ class KYCService {
 
     if (!application) {
       const error = new Error("Application not found");
-      error.statusCode = 404;
+      error.statusCode = StatusCodes.NOT_FOUND;
       throw error;
     }
 
@@ -155,11 +156,11 @@ class KYCService {
     const highCount = queue.filter((item) => item.priority === "High").length;
     const averageReviewTime = queue.length
       ? `${(
-          queue.reduce((sum, item) => {
-            const ageMinutes = (Date.now() - new Date(item.submittedAt).getTime()) / (1000 * 60);
-            return sum + ageMinutes;
-          }, 0) / queue.length
-        ).toFixed(1)}m`
+        queue.reduce((sum, item) => {
+          const ageMinutes = (Date.now() - new Date(item.submittedAt).getTime()) / (1000 * 60);
+          return sum + ageMinutes;
+        }, 0) / queue.length
+      ).toFixed(1)}m`
       : "0.0m";
 
     return {
@@ -239,13 +240,13 @@ class KYCService {
 
     if (application.status === "Verified") {
       const error = new Error("This application is already verified");
-      error.statusCode = 400;
+      error.statusCode = StatusCodes.BAD_REQUEST;
       throw error;
     }
 
     if (currentAttempts >= maxAttempts) {
       const error = new Error("Maximum verification attempts reached for this application");
-      error.statusCode = 409;
+      error.statusCode = StatusCodes.CONFLICT;
       throw error;
     }
 
@@ -254,10 +255,7 @@ class KYCService {
       compareFaces(application.uploadedPhoto, verificationData.selfieImage),
     ]);
 
-    if (
-      panExtractionResult.status === "rejected" ||
-      faceComparisonResult.status === "rejected"
-    ) {
+    if (panExtractionResult.status === "rejected" || faceComparisonResult.status === "rejected") {
       logger.error({
         message: "KYC verification dependency failed",
         applicationId,
@@ -282,7 +280,7 @@ class KYCService {
         combinedError.statusCode =
           panExtractionResult.reason?.statusCode ||
           faceComparisonResult.reason?.statusCode ||
-          503;
+          StatusCodes.SERVICE_UNAVAILABLE;
         throw combinedError;
       }
 
@@ -306,7 +304,7 @@ class KYCService {
       const error = new Error(
         "PAN number could not be extracted. Please hold the PAN card closer and keep it steady."
       );
-      error.statusCode = 422;
+      error.statusCode = StatusCodes.UNPROCESSABLE_ENTITY;
       throw error;
     }
 

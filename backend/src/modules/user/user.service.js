@@ -4,6 +4,7 @@ const path = require("path");
 const UserRepository = require("./user.repository");
 const UserResponseDTO = require("./dtos/userResponse.dto");
 const { uploadImage } = require("../../services/cloudinary.service");
+const {StatusCodes} = require("http-status-codes")
 
 class UserService {
     async getSecurityLogs({ page = 1, limit = 10, search = "" } = {}) {
@@ -118,7 +119,7 @@ class UserService {
 
         if (!user || !user.isActive) {
             const error = new Error("User not found");
-            error.statusCode = 404;
+            error.statusCode = StatusCodes.NOT_FOUND;
             throw error;
         }
 
@@ -140,7 +141,7 @@ class UserService {
 
         if (!updatedUser) {
             const error = new Error("User not found");
-            error.statusCode = 404;
+            error.statusCode = StatusCodes.NOT_FOUND;
             throw error;
         }
 
@@ -152,7 +153,7 @@ class UserService {
 
         if (!user || !user.password) {
             const error = new Error("User not found");
-            error.statusCode = 404;
+            error.statusCode = StatusCodes.NOT_FOUND;
             throw error;
         }
 
@@ -160,7 +161,7 @@ class UserService {
 
         if (!isMatch) {
             const error = new Error("Current password is incorrect");
-            error.statusCode = 400;
+            error.statusCode = StatusCodes.BAD_REQUEST;
             throw error;
         }
 
@@ -178,7 +179,7 @@ class UserService {
 
         if (!user) {
             const error = new Error("User not found");
-            error.statusCode = 404;
+            error.statusCode = StatusCodes.NOT_FOUND;
             throw error;
         }
 
@@ -218,7 +219,7 @@ async deactivateUser(userId) {
 
     if (!user) {
         const error = new Error("User not found");
-        error.statusCode = 404;
+        error.statusCode = StatusCodes.NOT_FOUND;
         throw error;
     }
 
@@ -232,7 +233,7 @@ async activateUser(userId) {
 
     if (!user) {
         const error = new Error("User not found");
-        error.statusCode = 404;
+        error.statusCode = StatusCodes.NOT_FOUND;
         throw error;
     }
 

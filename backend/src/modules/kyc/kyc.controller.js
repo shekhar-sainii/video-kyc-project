@@ -1,11 +1,12 @@
 const kycService = require("./kyc.service");
+const {StatusCodes} = require("http-status-codes")
 
 class KYCController {
   async getAdminApplicationDetail(req, res, next) {
     try {
       const data = await kycService.getAdminApplicationDetail(req.params.id);
 
-      return res.status(200).json({
+      return res.status(StatusCodes.OK).json({
         success: true,
         message: "KYC application detail fetched successfully",
         data,
@@ -21,7 +22,7 @@ class KYCController {
       const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 1000);
       const data = await kycService.getAdminQueue({ page, limit });
 
-      return res.status(200).json({
+      return res.status(StatusCodes.OK).json({
         success: true,
         message: "Admin queue fetched successfully",
         data,
@@ -35,7 +36,7 @@ class KYCController {
     try {
       const data = await kycService.getAdminDashboard();
 
-      return res.status(200).json({
+      return res.status(StatusCodes.OK).json({
         success: true,
         message: "Admin dashboard fetched successfully",
         data,
@@ -60,7 +61,7 @@ class KYCController {
         uploadedPhoto,
       });
 
-      return res.status(201).json({
+      return res.status(StatusCodes.CREATED).json({
         success: true,
         message: "KYC submitted successfully",
         data: result,
@@ -74,7 +75,7 @@ class KYCController {
     try {
       const applications = await kycService.getApplications(req.user.id);
 
-      return res.status(200).json({
+      return res.status(StatusCodes.OK).json({
         success: true,
         data: applications,
       });
@@ -104,7 +105,7 @@ class KYCController {
         selfieImage,
       });
 
-      return res.status(200).json({
+      return res.status(StatusCodes.OK).json({
         success: true,
         message: "Verification completed",
         data: {

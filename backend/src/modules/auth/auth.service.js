@@ -7,6 +7,7 @@ const authRepository = require("./auth.repository");
 const { generateAccessToken } = require("../../utils/jwt");
 const { generateRandomToken, hashToken } = require("../../utils/token");
 const UserResponseDTO = require("./dtos/userResponse.dto");
+const {StatusCodes} = require("http-status-codes")
 
 class AuthService {
 
@@ -26,7 +27,7 @@ class AuthService {
         const record = await authRepository.findVerificationToken(hashedToken);
         if (!record) {
             const error = new Error("Invalid or expired token");
-            error.statusCode = 400;
+            error.statusCode = StatusCodes.BAD_REQUEST;
             throw error;
         }
 
@@ -69,7 +70,7 @@ class AuthService {
         const existingUser = await authRepository.findUserByEmail(data.email);
         if (existingUser) {
             const error = new Error("Email already registered");
-            error.statusCode = 400;
+            error.statusCode = StatusCodes.BAD_REQUEST;
             throw error;
         }
 
@@ -95,19 +96,19 @@ class AuthService {
 
         if (!user || !user.password) {
             const error = new Error("Invalid credentials");
-            error.statusCode = 401;
+            error.statusCode = StatusCodes.UNAUTHORIZED;
             throw error;
         }
 
         if (user.lockUntil && user.lockUntil > Date.now()) {
             const error = new Error("Account is temporarily locked. Try again later.");
-            error.statusCode = 423;
+            error.statusCode = StatusCodes.LOCKED
             throw error;
         }
 
         if (!user.isEmailVerified) {
             const error = new Error("Please verify your email first");
-            error.statusCode = 403;
+            error.statusCode = StatusCodes.FORBIDDEN;
             error.code = "EMAIL_NOT_VERIFIED";
             throw error;
         }
@@ -125,7 +126,7 @@ class AuthService {
             await user.save();
 
             const error = new Error("Invalid credentials");
-            error.statusCode = 401;
+            error.statusCode = StatusCodes.UNAUTHORIZED;
             throw error;
         }
 
@@ -153,7 +154,7 @@ class AuthService {
         const stored = await authRepository.findRefreshToken(hashed);
         if (!stored) {
             const error = new Error("Invalid refresh token");
-            error.statusCode = 401;
+            error.statusCode = StatusCodes.UNAUTHORIZED;
             throw error;
         }
 
@@ -234,7 +235,7 @@ class AuthService {
             record.expiresAt < new Date()
         ) {
             const error = new Error("Invalid or expired token");
-            error.statusCode = 400;
+            error.statusCode = StatusCodes.BAD_REQUEST;
             throw error;
         }
 
@@ -250,14 +251,13 @@ class AuthService {
 
         return true;
     }
-    // Controller se call ho raha hai: authService.generateAccessToken
+
     generateAccessToken(payload) {
-        return generateAccessToken(payload); // Jo upar utils se import kiya hai
+        return generateAccessToken(payload); 
     }
 
-    // Controller se call ho raha hai: authService.generateRandomToken
     generateRandomToken(length = 32) {
-        return generateRandomToken(length); // Jo upar utils se import kiya hai
+        return generateRandomToken(length);
     }
 }
 

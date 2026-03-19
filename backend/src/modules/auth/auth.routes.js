@@ -43,11 +43,6 @@ router.get("/google",
   })
 );
 
-// router.get("/google/callback",
-//   passport.authenticate("google", { session: false }),
-//   authController.googleCallback
-// );
-// Passport authenticate wala middleware hata dein
 router.get("/google/callback", authController.googleCallback);
 
 module.exports = router;
