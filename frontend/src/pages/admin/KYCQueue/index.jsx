@@ -118,33 +118,33 @@ const KYCQueue = () => {
   ];
 
   return (
-    <div className="p-8 space-y-8">
+    <div className="space-y-5 p-4 sm:space-y-6 sm:p-6 lg:space-y-8 lg:p-8">
       {/* --- HEADER --- */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+      <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className={`text-3xl font-black tracking-tight uppercase italic ${isDark ? "text-white" : "text-slate-900"}`}>
+          <h1 className={`text-2xl font-black tracking-tight uppercase italic sm:text-3xl ${isDark ? "text-white" : "text-slate-900"}`}>
             Verification Queue
           </h1>
           <div className="flex items-center gap-2 mt-1">
              <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse"></span>
-             <p className="text-sm font-medium text-slate-500">{queue.length} Applications awaiting manual review</p>
+             <p className="text-xs font-medium text-slate-500 sm:text-sm">{queue.length} Applications awaiting manual review</p>
           </div>
         </div>
         
-        <div className="flex gap-3">
-             <div className={`relative ${isDark ? "text-white" : "text-slate-900"}`}>
+        <div className="flex w-full flex-col gap-3 sm:flex-row md:w-auto">
+             <div className={`relative flex-1 ${isDark ? "text-white" : "text-slate-900"}`}>
                 <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 opacity-30" />
                 <input 
                     type="text" 
                     placeholder="Search applicant..." 
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className={`pl-10 pr-4 py-2.5 rounded-xl border-2 outline-none text-xs font-bold transition-all ${
+                    className={`w-full rounded-xl border-2 py-2.5 pl-10 pr-4 text-xs font-bold outline-none transition-all ${
                         isDark ? "bg-slate-800 border-slate-700 focus:border-indigo-500" : "bg-white border-slate-100 focus:border-indigo-600"
                     }`}
                 />
              </div>
-             <button className={`p-2.5 rounded-xl border-2 ${isDark ? "border-slate-700 text-slate-400" : "border-slate-100 text-slate-500"}`}>
+             <button className={`flex h-11 w-11 items-center justify-center rounded-xl border-2 ${isDark ? "border-slate-700 text-slate-400" : "border-slate-100 text-slate-500"}`}>
                 <FiFilter />
              </button>
         </div>
@@ -158,7 +158,7 @@ const KYCQueue = () => {
       </div>
 
       {/* --- TABLE AREA --- */}
-      <div className={`rounded-[2.5rem] border-2 overflow-hidden shadow-2xl ${
+      <div className={`overflow-hidden rounded-[2rem] border-2 shadow-2xl lg:rounded-[2.5rem] ${
         isDark ? "bg-[#1a2b4b] border-slate-700 shadow-indigo-900/10" : "bg-white border-slate-100"
       }`}>
         <Table
@@ -176,7 +176,7 @@ const KYCQueue = () => {
 const StatusBox = ({ label, value, sub, color }) => {
     const isDark = useSelector((state) => state.theme.mode === "dark");
     return (
-        <div className={`p-6 rounded-[2rem] border-2 ${isDark ? "bg-[#1a2b4b] border-slate-700" : "bg-white border-slate-100 shadow-sm"}`}>
+        <div className={`rounded-[1.75rem] border-2 p-5 sm:p-6 lg:rounded-[2rem] ${isDark ? "bg-[#1a2b4b] border-slate-700" : "bg-white border-slate-100 shadow-sm"}`}>
             <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">{label}</p>
             <h3 className={`text-2xl font-black italic ${color}`}>{value}</h3>
             <p className="text-[10px] font-bold text-slate-500 mt-1">{sub}</p>

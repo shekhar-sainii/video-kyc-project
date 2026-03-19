@@ -1,4 +1,3 @@
-const { extractPanNumber } = require("../../services/ocr.service");
 const kycService = require("./kyc.service");
 
 class KYCController {
@@ -98,16 +97,7 @@ class KYCController {
         throw new Error("Required images missing");
       }
 
-      const extractedPan = await extractPanNumber(panCardImage);
-
-      if (!extractedPan) {
-        const error = new Error("PAN number could not be extracted. Please hold the PAN card closer and keep it steady.");
-        error.statusCode = 422;
-        throw error;
-      }
-
       const result = await kycService.verifyKyc(req.user.id, applicationId, {
-        extractedPan,
         panCardImage,
         selfieImage,
       });

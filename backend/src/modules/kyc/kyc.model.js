@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const MAX_KYC_VERIFICATION_ATTEMPTS = 5;
 
 const kycSchema = new mongoose.Schema(
   {
@@ -60,6 +61,18 @@ const kycSchema = new mongoose.Schema(
     verificationMessage: {
       type: String,
       default: null,
+    },
+
+    verificationAttempts: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: MAX_KYC_VERIFICATION_ATTEMPTS,
+    },
+
+    maxVerificationAttempts: {
+      type: Number,
+      default: MAX_KYC_VERIFICATION_ATTEMPTS,
     },
 
     submittedAt: {

@@ -137,7 +137,7 @@ const Table = ({
             ${className}
           `}
         >
-          <table className="w-full text-sm text-left">
+          <table className="w-full min-w-[720px] text-left text-sm">
             <thead
               className={`capitalize
                 ${isDark
@@ -151,7 +151,7 @@ const Table = ({
                     <th
                       key={i}
                       colSpan={h.colSpan}
-                      className="px-6 py-3 text-center"
+                      className="px-3 py-3 text-center sm:px-6"
                     >
                       {h.name}
                     </th>
@@ -164,7 +164,7 @@ const Table = ({
                   <th
                     key={col.key}
                     onClick={() => handleSort(col)}
-                    className={`px-6 py-3 font-medium select-none
+                    className={`px-3 py-3 font-medium select-none sm:px-6
                       ${col.sort ? "cursor-pointer" : ""}
                     `}
                   >
@@ -198,7 +198,7 @@ const Table = ({
                       {columns.map((col) => (
                         <td
                           key={col.key}
-                          className={`px-6 py-4 border-b
+                          className={`px-3 py-4 border-b align-top sm:px-6
                             ${isDark
                               ? "border-gray-700"
                               : "border-gray-200"}
@@ -222,7 +222,7 @@ const Table = ({
                       {columns.map((col) => (
                         <td
                           key={col.key}
-                          className={`px-6 py-4 border-b
+                          className={`px-3 py-4 border-b align-top sm:px-6
                             ${isDark
                               ? "border-gray-700"
                               : "border-gray-200"}
@@ -252,7 +252,7 @@ const Table = ({
       {/* ================= PAGINATION ================= */}
       {isPagination && total > pageSize && (
         <div
-          className={`flex justify-between items-center mt-4 px-4 text-sm
+          className={`mt-4 flex flex-col gap-3 px-2 text-sm sm:flex-row sm:items-center sm:justify-between sm:px-4
             ${isDark ? "text-gray-300" : "text-gray-700"}
             ${paginationClassName}
           `}
@@ -275,7 +275,7 @@ const Table = ({
             </select>
           )}
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               disabled={page === 1}
               onClick={() => handlePaginate(page - 1)}

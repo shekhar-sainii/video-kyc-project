@@ -1,5 +1,9 @@
 const Tesseract = require("tesseract.js");
 const { createCanvas, loadImage } = require("canvas");
+const {
+  isOpenAIVisionConfigured,
+  extractPanNumberWithOpenAI,
+} = require("./openaiVision.service");
 
 const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
 
@@ -346,7 +350,23 @@ const extractPanNumber = async (imagePath) => {
   }
 
   const fallbackCrops = CROP_PASSES.filter((crop) => crop.fallback);
-  return runPasses(fallbackCrops);
+  const fallbackResult = await runPasses(fallbackCrops);
+  if (fallbackResult) {
+    return fallbackResult;
+  }
+
+  if (isOpenAIVisionConfigured()) {
+    try {
+      const openAiPan = await extractPanNumberWithOpenAI(imagePath);
+      if (openAiPan && PAN_REGEX.test(openAiPan)) {
+        return openAiPan;
+      }
+    } catch {
+      // Ignore external OCR failures and surface null below.
+    }
+  }
+
+  return null;
 };
 
 module.exports = {

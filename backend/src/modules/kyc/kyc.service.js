@@ -1,11 +1,20 @@
 const kycRepository = require("./kyc.repository");
 const { compareFaces } = require("../../services/faceCompare.service");
+const { extractPanNumber } = require("../../services/ocr.service");
 const sendEmail = require("../../utils/sendEmail");
 const kycStatusTemplate = require("../../templates/emails/kycStatus.template");
 const logger = require("../../utils/logger");
 
 const maskPan = (pan) =>
   pan.replace(/^(.{4}).*(.{2})$/, "$1••••$2");
+const MAX_KYC_VERIFICATION_ATTEMPTS = 5;
+
+const toErrorWithStatus = (error, fallbackMessage, fallbackStatusCode = 503) => {
+  const wrappedError = new Error(error?.message || fallbackMessage);
+  wrappedError.statusCode = error?.statusCode || fallbackStatusCode;
+  wrappedError.cause = error;
+  return wrappedError;
+};
 
 const getPanDistance = (left, right) => {
   if (!left || !right || left.length !== right.length) {
@@ -197,6 +206,12 @@ class KYCService {
       panNumber: maskPan(app.panNumber),
       status: app.status,
       submittedAt: app.submittedAt,
+      verificationAttempts: app.verificationAttempts || 0,
+      maxVerificationAttempts: app.maxVerificationAttempts || MAX_KYC_VERIFICATION_ATTEMPTS,
+      attemptsRemaining: Math.max(
+        0,
+        (app.maxVerificationAttempts || MAX_KYC_VERIFICATION_ATTEMPTS) - (app.verificationAttempts || 0)
+      ),
     }));
   }
 
@@ -213,37 +228,112 @@ class KYCService {
       throw error;
     }
 
-    const normalizedExtractedPan = verificationData.extractedPan?.toUpperCase() || "";
-    const normalizedApplicationPan = application.panNumber.toUpperCase();
-    const panDistance = getPanDistance(normalizedExtractedPan, normalizedApplicationPan);
-    const panMatch = normalizedExtractedPan && panDistance <= 1;
+    const currentAttempts = application.verificationAttempts || 0;
+    const maxAttempts = application.maxVerificationAttempts || MAX_KYC_VERIFICATION_ATTEMPTS;
 
-    let faceMatchResult;
-
-    try {
-      faceMatchResult = await compareFaces(
-        application.uploadedPhoto,
-        verificationData.selfieImage
-      );
-    } catch (error) {
-      error.statusCode = error.statusCode || 503;
+    if (application.status === "Verified") {
+      const error = new Error("This application is already verified");
+      error.statusCode = 400;
       throw error;
     }
 
-    const faceMatch = faceMatchResult.matched;
+    if (currentAttempts >= maxAttempts) {
+      const error = new Error("Maximum verification attempts reached for this application");
+      error.statusCode = 409;
+      throw error;
+    }
 
-    let status = "Rejected";
+    const [panExtractionResult, faceComparisonResult] = await Promise.allSettled([
+      extractPanNumber(verificationData.panCardImage),
+      compareFaces(application.uploadedPhoto, verificationData.selfieImage),
+    ]);
+
+    if (
+      panExtractionResult.status === "rejected" ||
+      faceComparisonResult.status === "rejected"
+    ) {
+      logger.error({
+        message: "KYC verification dependency failed",
+        applicationId,
+        userId,
+        panError:
+          panExtractionResult.status === "rejected"
+            ? panExtractionResult.reason?.message
+            : null,
+        faceError:
+          faceComparisonResult.status === "rejected"
+            ? faceComparisonResult.reason?.message
+            : null,
+      });
+
+      if (
+        panExtractionResult.status === "rejected" &&
+        faceComparisonResult.status === "rejected"
+      ) {
+        const combinedError = new Error(
+          "PAN extraction and face verification both failed. Please retry with a clearer PAN card and selfie."
+        );
+        combinedError.statusCode =
+          panExtractionResult.reason?.statusCode ||
+          faceComparisonResult.reason?.statusCode ||
+          503;
+        throw combinedError;
+      }
+
+      if (panExtractionResult.status === "rejected") {
+        throw toErrorWithStatus(
+          panExtractionResult.reason,
+          "PAN extraction failed. Please hold the PAN card clearly in better lighting."
+        );
+      }
+
+      throw toErrorWithStatus(
+        faceComparisonResult.reason,
+        "Face verification failed. Please look directly into the camera and try again."
+      );
+    }
+
+    const extractedPan = panExtractionResult.value;
+    const faceMatchResult = faceComparisonResult.value;
+
+    if (!extractedPan) {
+      const error = new Error(
+        "PAN number could not be extracted. Please hold the PAN card closer and keep it steady."
+      );
+      error.statusCode = 422;
+      throw error;
+    }
+
+    const normalizedExtractedPan = extractedPan.toUpperCase();
+    const normalizedApplicationPan = application.panNumber.toUpperCase();
+    const panDistance = getPanDistance(normalizedExtractedPan, normalizedApplicationPan);
+    const panMatch = panDistance <= 1;
+
+    const faceMatch = faceMatchResult.matched;
+    const nextAttempts = currentAttempts + 1;
+    const attemptsRemaining = Math.max(0, maxAttempts - nextAttempts);
+
+    let status = "Pending";
     let verificationMessage = "";
 
     if (faceMatch && panMatch) {
       status = "Verified";
       verificationMessage = "KYC Verified Successfully";
-    } else if (!faceMatch && !panMatch) {
-      verificationMessage = "Face mismatch and PAN mismatch";
-    } else if (!faceMatch) {
-      verificationMessage = "Face mismatch";
     } else {
-      verificationMessage = `PAN mismatch${normalizedExtractedPan ? ` (detected ${normalizedExtractedPan})` : ""}`;
+      let mismatchReason = "";
+
+      if (!faceMatch && !panMatch) {
+        mismatchReason = "Face mismatch and PAN mismatch";
+      } else if (!faceMatch) {
+        mismatchReason = "Face mismatch";
+      } else {
+        mismatchReason = `PAN mismatch${normalizedExtractedPan ? ` (detected ${normalizedExtractedPan})` : ""}`;
+      }
+
+      status = attemptsRemaining > 0 ? "Pending" : "Rejected";
+      verificationMessage = attemptsRemaining > 0
+        ? `${mismatchReason}. ${attemptsRemaining} attempt${attemptsRemaining === 1 ? "" : "s"} remaining.`
+        : `${mismatchReason}. Maximum verification attempts reached.`;
     }
 
     const updatedApplication = await kycRepository.updateVerification(applicationId, {
@@ -252,6 +342,8 @@ class KYCService {
       faceMatch,
       faceMatchScore: faceMatchResult.score,
       panMatch,
+      verificationAttempts: nextAttempts,
+      maxVerificationAttempts: maxAttempts,
       status,
       verificationMessage,
     });

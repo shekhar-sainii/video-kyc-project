@@ -25,7 +25,7 @@ const kycService = {
    */
   verifyKyc(formData) {
     return authAxios.post("/kyc/verify", formData, {
-      timeout: 45000,
+      timeout: 90000,
     });
   },
 

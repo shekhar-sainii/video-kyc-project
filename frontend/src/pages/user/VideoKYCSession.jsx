@@ -29,6 +29,8 @@ const VideoKYCSession = () => {
   const [cameraFacingMode, setCameraFacingMode] = useState("user");
   const [autoStatus, setAutoStatus] = useState("Initializing camera...");
   const [activeDeviceId, setActiveDeviceId] = useState(null);
+  const [guideState, setGuideState] = useState("neutral");
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
 
   const loadVideoDevices = async (preferredFacingMode = cameraFacingMode) => {
     if (!navigator.mediaDevices?.enumerateDevices) {
@@ -96,6 +98,88 @@ const VideoKYCSession = () => {
     };
   };
 
+  const getPanAssessment = (ctx, videoWidth, videoHeight) => {
+    const guideWidth = Math.round(videoWidth * 0.66);
+    const guideHeight = Math.round(videoHeight * 0.42);
+    const guideX = Math.round((videoWidth - guideWidth) / 2);
+    const guideY = Math.round((videoHeight - guideHeight) / 2);
+
+    const centerBandWidth = Math.round(guideWidth * 0.74);
+    const centerBandHeight = Math.round(guideHeight * 0.46);
+    const centerBandX = Math.round(guideX + ((guideWidth - centerBandWidth) / 2));
+    const centerBandY = Math.round(guideY + ((guideHeight - centerBandHeight) / 2));
+
+    const guideMetrics = getFrameMetrics(ctx, guideX, guideY, guideWidth, guideHeight);
+    const bandMetrics = getFrameMetrics(
+      ctx,
+      centerBandX,
+      centerBandY,
+      centerBandWidth,
+      centerBandHeight
+    );
+
+    const limits = isMobileViewport
+      ? {
+          brightnessMin: 38,
+          brightnessMax: 238,
+          varianceMin: 240,
+          edgeMin: 0.025,
+          edgeMax: 0.52,
+          bandVarianceMin: 140,
+          bandEdgeMin: 0.015,
+          bandEdgeMax: 0.45,
+        }
+      : {
+          brightnessMin: 45,
+          brightnessMax: 232,
+          varianceMin: 300,
+          edgeMin: 0.035,
+          edgeMax: 0.56,
+          bandVarianceMin: 170,
+          bandEdgeMin: 0.02,
+          bandEdgeMax: 0.48,
+        };
+
+    const checks = {
+      brightness:
+        guideMetrics.meanBrightness > limits.brightnessMin &&
+        guideMetrics.meanBrightness < limits.brightnessMax,
+      texture: guideMetrics.variance > limits.varianceMin,
+      edges:
+        guideMetrics.edgeDensity > limits.edgeMin &&
+        guideMetrics.edgeDensity < limits.edgeMax,
+      bandTexture: bandMetrics.variance > limits.bandVarianceMin,
+      bandEdges:
+        bandMetrics.edgeDensity > limits.bandEdgeMin &&
+        bandMetrics.edgeDensity < limits.bandEdgeMax,
+    };
+
+    const score = Object.values(checks).filter(Boolean).length;
+
+    let message = "Align PAN card inside the guide box.";
+    if (!checks.brightness) {
+      message =
+        guideMetrics.meanBrightness <= limits.brightnessMin
+          ? "Increase light on the PAN card."
+          : "Reduce glare and tilt on the PAN card.";
+    } else if (!checks.texture) {
+      message = "Move the PAN card closer to the camera.";
+    } else if (!checks.edges || !checks.bandEdges) {
+      message = "Keep the PAN card flat and fully inside the frame.";
+    } else if (!checks.bandTexture) {
+      message = "Hold the PAN card steady for auto-capture.";
+    }
+
+    return {
+      guideMetrics,
+      bandMetrics,
+      score,
+      stable: score >= 4,
+      almostStable: score === 3,
+      message,
+    };
+  };
+
   const clearAnalysisLoop = () => {
     if (analysisIntervalRef.current) {
       clearInterval(analysisIntervalRef.current);
@@ -116,6 +200,7 @@ const VideoKYCSession = () => {
   // --- 3. AI GUIDANCE LOGIC ---
   const guideUser = (currentStep) => {
     setStep(currentStep);
+    setGuideState("neutral");
     switch (currentStep) {
       case 1:
         speak("Hello! I am your AI assistant. Let's get started with your Video KYC verification.");
@@ -224,6 +309,7 @@ const VideoKYCSession = () => {
       selfieStableFramesRef.current = 0;
       captureLockRef.current = false;
       switchInProgressRef.current = false;
+      setGuideState("neutral");
       await loadVideoDevices(facingMode);
     } catch (error) {
       if (error?.name === "NotReadableError" && retryCount < 2) {
@@ -258,6 +344,7 @@ const VideoKYCSession = () => {
 
     switchInProgressRef.current = true;
     captureLockRef.current = true;
+    setGuideState("neutral");
     const nextFacingMode = cameraFacingMode === "user" ? "environment" : "user";
     setAutoStatus(nextFacingMode === "environment" ? "Switching to back camera..." : "Switching to front camera...");
     const devices = availableVideoDevicesRef.current.length
@@ -302,6 +389,20 @@ const VideoKYCSession = () => {
   }, []);
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    const updateViewportMode = () => {
+      setIsMobileViewport(window.innerWidth < 768);
+    };
+
+    updateViewportMode();
+    window.addEventListener("resize", updateViewportMode);
+    return () => window.removeEventListener("resize", updateViewportMode);
+  }, []);
+
+  useEffect(() => {
     clearAnalysisLoop();
 
     if (cameraState.status !== "ready" || step < 2 || step > 3) {
@@ -328,29 +429,26 @@ const VideoKYCSession = () => {
       ctx.drawImage(videoRef.current, 0, 0, videoWidth, videoHeight);
 
       if (step === 2) {
-        const guideWidth = Math.round(videoWidth * 0.66);
-        const guideHeight = Math.round(videoHeight * 0.42);
-        const guideX = Math.round((videoWidth - guideWidth) / 2);
-        const guideY = Math.round((videoHeight - guideHeight) / 2);
-        const metrics = getFrameMetrics(ctx, guideX, guideY, guideWidth, guideHeight);
+        const panWarmupThreshold = Math.max(1, AUTO_PAN_STABLE_FRAMES - 2);
+        const panAssessment = getPanAssessment(ctx, videoWidth, videoHeight);
 
-        const panLooksStable =
-          metrics.meanBrightness > 65 &&
-          metrics.meanBrightness < 215 &&
-          metrics.variance > 700 &&
-          metrics.edgeDensity > 0.08 &&
-          metrics.edgeDensity < 0.32;
-
-        if (panLooksStable) {
+        if (panAssessment.stable) {
           panStableFramesRef.current += 1;
+          setGuideState(panStableFramesRef.current >= panWarmupThreshold ? "valid" : "neutral");
           setAutoStatus(`PAN detected, hold steady... ${panStableFramesRef.current}/${AUTO_PAN_STABLE_FRAMES}`);
+        } else if (panAssessment.almostStable) {
+          panStableFramesRef.current = 0;
+          setGuideState("neutral");
+          setAutoStatus("PAN almost aligned. Hold it flatter and a little closer.");
         } else {
           panStableFramesRef.current = 0;
-          setAutoStatus("Align PAN card inside the guide box for auto-capture.");
+          setGuideState("invalid");
+          setAutoStatus(panAssessment.message);
         }
 
         if (panStableFramesRef.current >= AUTO_PAN_STABLE_FRAMES) {
           captureLockRef.current = true;
+          setGuideState("valid");
           setAutoStatus("PAN card captured successfully.");
           captureFrame("pan");
         }
@@ -358,6 +456,7 @@ const VideoKYCSession = () => {
       }
 
       if (!faceDetectorRef.current) {
+        setGuideState("neutral");
         setAutoStatus("Face auto-detect needs a newer browser. Use manual capture if needed.");
         return;
       }
@@ -366,6 +465,7 @@ const VideoKYCSession = () => {
         const faces = await faceDetectorRef.current.detect(canvas);
         if (!faces?.length) {
           selfieStableFramesRef.current = 0;
+          setGuideState("invalid");
           setAutoStatus("Look into the camera and keep your face inside the guide.");
           return;
         }
@@ -385,34 +485,39 @@ const VideoKYCSession = () => {
           Math.min(Math.floor(face.width), videoWidth - Math.max(Math.floor(face.x), 0)),
           Math.min(Math.floor(face.height), videoHeight - Math.max(Math.floor(face.y), 0))
         );
+        const faceWarmupThreshold = Math.max(1, AUTO_FACE_STABLE_FRAMES - 1);
 
         const selfieLooksStable =
-          normalizedCenterX > 0.36 &&
-          normalizedCenterX < 0.64 &&
-          normalizedCenterY > 0.3 &&
-          normalizedCenterY < 0.7 &&
-          normalizedFaceWidth > 0.18 &&
-          normalizedFaceWidth < 0.58 &&
-          normalizedFaceHeight > 0.22 &&
-          normalizedFaceHeight < 0.72 &&
-          faceMetrics.meanBrightness > 55 &&
-          faceMetrics.meanBrightness < 210 &&
-          faceMetrics.variance > 180;
+          normalizedCenterX > (isMobileViewport ? 0.3 : 0.36) &&
+          normalizedCenterX < (isMobileViewport ? 0.7 : 0.64) &&
+          normalizedCenterY > (isMobileViewport ? 0.24 : 0.3) &&
+          normalizedCenterY < (isMobileViewport ? 0.76 : 0.7) &&
+          normalizedFaceWidth > (isMobileViewport ? 0.14 : 0.18) &&
+          normalizedFaceWidth < (isMobileViewport ? 0.68 : 0.58) &&
+          normalizedFaceHeight > (isMobileViewport ? 0.18 : 0.22) &&
+          normalizedFaceHeight < (isMobileViewport ? 0.8 : 0.72) &&
+          faceMetrics.meanBrightness > (isMobileViewport ? 40 : 55) &&
+          faceMetrics.meanBrightness < (isMobileViewport ? 225 : 210) &&
+          faceMetrics.variance > (isMobileViewport ? 120 : 180);
 
         if (selfieLooksStable) {
           selfieStableFramesRef.current += 1;
+          setGuideState(selfieStableFramesRef.current >= faceWarmupThreshold ? "valid" : "neutral");
           setAutoStatus(`Face aligned, auto-capturing... ${selfieStableFramesRef.current}/${AUTO_FACE_STABLE_FRAMES}`);
         } else {
           selfieStableFramesRef.current = 0;
+          setGuideState("invalid");
           setAutoStatus("Center your face and improve lighting for auto-capture.");
         }
 
         if (selfieStableFramesRef.current >= AUTO_FACE_STABLE_FRAMES) {
           captureLockRef.current = true;
+          setGuideState("valid");
           setAutoStatus("Selfie captured successfully.");
           captureFrame("selfie");
         }
       } catch {
+        setGuideState("neutral");
         setAutoStatus("Face detection unavailable right now. Use manual capture if needed.");
       }
     };
@@ -422,25 +527,57 @@ const VideoKYCSession = () => {
     }, 700);
 
     return () => clearAnalysisLoop();
-  }, [cameraState.status, step]);
+  }, [cameraState.status, step, isMobileViewport]);
 
   // --- 4. IMAGE CAPTURE ---
+  const getOptimizedCaptureDataUrl = (type) => {
+    const video = videoRef.current;
+    if (!video || video.readyState < 2) {
+      return null;
+    }
+
+    const sourceWidth = video.videoWidth;
+    const sourceHeight = video.videoHeight;
+    const maxWidth = type === "pan" ? 1280 : 960;
+    const maxHeight = type === "pan" ? 820 : 960;
+    const scale = Math.min(
+      1,
+      maxWidth / Math.max(sourceWidth, 1),
+      maxHeight / Math.max(sourceHeight, 1)
+    );
+
+    const targetWidth = Math.max(1, Math.round(sourceWidth * scale));
+    const targetHeight = Math.max(1, Math.round(sourceHeight * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+
+    const ctx = canvas.getContext("2d");
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(video, 0, 0, targetWidth, targetHeight);
+
+    return canvas.toDataURL("image/jpeg", type === "pan" ? 0.9 : 0.82);
+  };
+
   const captureFrame = (type) => {
     if (!videoRef.current || videoRef.current.readyState < 2) {
       Swal.fire("Camera Not Ready", "Please wait for the video feed to start.", "warning");
       return;
     }
 
-    const canvas = document.createElement("canvas");
-    canvas.width = videoRef.current.videoWidth;
-    canvas.height = videoRef.current.videoHeight;
-    canvas.getContext("2d").drawImage(videoRef.current, 0, 0);
-    const dataUrl = canvas.toDataURL("image/jpeg");
+    const dataUrl = getOptimizedCaptureDataUrl(type);
+
+    if (!dataUrl) {
+      Swal.fire("Capture Failed", "Unable to capture the current frame.", "error");
+      return;
+    }
 
     const updated = { ...capturedImagesRef.current, [type]: dataUrl };
     capturedImagesRef.current = updated;
     panStableFramesRef.current = 0;
     selfieStableFramesRef.current = 0;
+    setGuideState("valid");
 
     if (type === "pan") {
       Swal.fire({
@@ -502,15 +639,33 @@ const VideoKYCSession = () => {
     } catch (err) {
       const message =
         err?.code === "ECONNABORTED"
-          ? "Verification is taking longer than expected. Please try again."
+          ? "Verification is still processing. Please wait a little longer and check your dashboard status."
           : err?.response?.data?.message || "Verification failed. Please try again.";
       Swal.fire("Error", message, "error").then(() => navigate("/dashboard"));
     }
   };
 
+  const guideTone =
+    guideState === "valid"
+      ? {
+          ring: "border-emerald-400/80 shadow-[0_0_40px_rgba(52,211,153,0.35)]",
+          panel: "text-emerald-300 bg-emerald-500/15 border-emerald-400/30",
+          label: "ALIGNED",
+        }
+      : guideState === "invalid"
+        ? {
+            ring: "border-red-400/80 shadow-[0_0_40px_rgba(248,113,113,0.30)]",
+            panel: "text-red-300 bg-red-500/15 border-red-400/30",
+            label: "ADJUST",
+          }
+        : {
+            ring: "border-indigo-400/60 shadow-[0_0_35px_rgba(99,102,241,0.25)]",
+            panel: "text-indigo-200 bg-indigo-500/15 border-indigo-400/30",
+            label: "SCANNING",
+          };
+
   return (
     <div className={`min-h-screen flex flex-col transition-colors duration-300 ${isDark ? "bg-[#0f172a]" : "bg-[#f4f7fe]"}`}>
-      
       {/* Top Header */}
       <div className={`border-b px-4 py-4 sm:px-6 lg:px-8 ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -603,7 +758,12 @@ const VideoKYCSession = () => {
                           <p className="mt-3 text-xs text-white/70">{cameraState.message}</p>
                         )}
                         {cameraState.status === "ready" && step >= 2 && step <= 3 && (
-                          <p className="mt-3 text-xs text-white/75">{autoStatus}</p>
+                          <div className="mt-3 flex flex-col items-center gap-2">
+                            <span className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] ${guideTone.panel}`}>
+                              {guideTone.label}
+                            </span>
+                            <p className="text-xs text-white/75">{autoStatus}</p>
+                          </div>
                         )}
                         {cameraState.status === "loading" && step === 1 && (
                           <p className="mt-3 text-xs text-white/70">Starting mobile camera preview...</p>
@@ -624,9 +784,9 @@ const VideoKYCSession = () => {
             {/* Scanning Frame for PAN/Face */}
             {(step === 2 || step === 3) && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <div className={`border-4 border-dashed border-indigo-400/50 rounded-3xl animate-pulse ${
+                    <div className={`border-4 border-dashed animate-pulse transition-all duration-300 ${guideTone.ring} ${
                         step === 2
-                          ? "h-[30%] w-[82%] sm:h-1/2 sm:w-2/3"
+                          ? "h-[30%] w-[82%] rounded-3xl sm:h-1/2 sm:w-2/3"
                           : "w-[45%] aspect-square rounded-full sm:w-1/3"
                     }`}></div>
                 </div>

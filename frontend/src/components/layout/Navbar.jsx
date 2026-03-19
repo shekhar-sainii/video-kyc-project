@@ -13,6 +13,7 @@ import {
   FiShield,
   FiList,
   FiCheckCircle,
+  FiMenu,
 } from "react-icons/fi";
 
 const toImageUrl = (profileImage) => {
@@ -37,7 +38,7 @@ const toImageUrl = (profileImage) => {
   }
 };
 
-const Navbar = () => {
+const Navbar = ({ onAdminMenuToggle }) => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const location = useLocation();
@@ -73,16 +74,29 @@ const Navbar = () => {
     <nav className={`sticky top-0 z-50 border-b transition-all duration-300 backdrop-blur-md ${
       isDark ? "bg-[#0f172a]/80 border-slate-800" : "bg-white/80 border-slate-100 shadow-sm"
     }`}>
-      <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
+      <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-4 sm:h-20 sm:px-6">
         
         {/* LEFT: FinVerify Branding */}
-        <div className="flex items-center gap-12">
+        <div className="flex items-center gap-4 sm:gap-8 lg:gap-12">
+          {isAdminPanel && (
+            <button
+              onClick={onAdminMenuToggle}
+              className={`flex h-11 w-11 items-center justify-center rounded-2xl border lg:hidden ${
+                isDark
+                  ? "border-slate-700 bg-slate-800 text-slate-100"
+                  : "border-slate-200 bg-white text-slate-700 shadow-sm"
+              }`}
+              aria-label="Toggle admin navigation"
+            >
+              <FiMenu size={18} />
+            </button>
+          )}
           <Link to="/" className="flex items-center gap-3 group">
             <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white font-black shadow-xl shadow-indigo-500/20 group-hover:scale-105 transition-transform">
               <FiShield size={22} />
             </div>
             <div className="flex flex-col">
-              <span className={`text-xl font-black tracking-tight leading-none ${isDark ? "text-white" : "text-[#1e1b4b]"}`}>
+              <span className={`text-lg font-black tracking-tight leading-none sm:text-xl ${isDark ? "text-white" : "text-[#1e1b4b]"}`}>
                 {isAdminPanel ? "Admin" : "FinVerify"}
               </span>
               <span className="text-[9px] font-bold text-indigo-500 uppercase tracking-[0.2em] mt-1">
@@ -101,7 +115,7 @@ const Navbar = () => {
         </div>
 
         {/* RIGHT: Actions */}
-        <div className="flex items-center gap-5">
+        <div className="flex items-center gap-2 sm:gap-5">
           
           {/* Theme Toggle */}
           <button 
@@ -117,7 +131,7 @@ const Navbar = () => {
             <div className="relative" ref={dropdownRef}>
               <button
                 onClick={() => setProfileOpen(!profileOpen)}
-                className={`flex items-center gap-3 p-1.5 pr-4 rounded-2xl border-2 transition-all hover:shadow-lg ${
+                className={`flex items-center gap-2 p-1.5 pr-2 sm:gap-3 sm:pr-4 rounded-2xl border-2 transition-all hover:shadow-lg ${
                   isDark ? "bg-slate-800 border-slate-700 text-white" : "bg-slate-50 border-slate-100 text-slate-800 shadow-sm"
                 }`}
               >
@@ -138,12 +152,12 @@ const Navbar = () => {
                         {user?.name?.split(" ")[0]}
                     </p>
                 </div>
-                <FiChevronDown size={14} className={`transition-transform duration-300 opacity-40 ${profileOpen ? "rotate-180" : ""}`} />
+                <FiChevronDown size={14} className={`hidden sm:block transition-transform duration-300 opacity-40 ${profileOpen ? "rotate-180" : ""}`} />
               </button>
 
               {/* Dropdown Menu */}
               {profileOpen && (
-                <div className={`absolute right-0 mt-4 w-64 rounded-[2rem] shadow-2xl border overflow-hidden animate-in slide-in-from-top-2 duration-300 ${
+                <div className={`absolute right-0 mt-4 w-[min(16rem,calc(100vw-1rem))] rounded-[2rem] shadow-2xl border overflow-hidden animate-in slide-in-from-top-2 duration-300 ${
                   isDark ? "bg-[#1a2133] border-slate-700 text-slate-200" : "bg-white border-slate-100 text-slate-800"
                 }`}>
                   <div className={`px-6 py-5 border-b ${isDark ? "border-slate-700 bg-slate-800/40" : "border-slate-100 bg-slate-50/50"}`}>

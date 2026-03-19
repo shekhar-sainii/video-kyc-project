@@ -45,22 +45,22 @@ const Dashboard = () => {
   }, []);
 
   return (
-    <div className={`p-8 space-y-8 min-h-screen transition-colors duration-300
+    <div className={`min-h-screen space-y-5 p-4 transition-colors duration-300 sm:space-y-6 sm:p-6 lg:space-y-8 lg:p-8
         ${isDark ? "bg-[#0f172a] text-gray-200" : "bg-[#f8fafd] text-[#1a2b4b]"}
       `}
     >
       {/* HEADER */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-3xl font-black tracking-tight uppercase italic">Compliance Dashboard</h1>
-          <p className="text-sm text-slate-500 font-medium">Monitoring real-time Identity Verifications & AI Vision Scores.</p>
+          <h1 className="text-2xl font-black tracking-tight uppercase italic sm:text-3xl">Compliance Dashboard</h1>
+          <p className="text-xs font-medium text-slate-500 sm:text-sm">Monitoring real-time Identity Verifications & AI Vision Scores.</p>
         </div>
-        <div className="flex gap-3 w-full md:w-auto">
+        <div className="flex w-full flex-col gap-3 sm:flex-row md:w-auto">
           <div className="relative flex-1">
              <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-             <input type="text" placeholder="Search PAN/Application ID..." className={`pl-10 pr-4 py-2 rounded-xl border text-sm w-full outline-none focus:border-indigo-500 ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`} />
+             <input type="text" placeholder="Search PAN/Application ID..." className={`w-full rounded-xl border py-2.5 pl-10 pr-4 text-sm outline-none focus:border-indigo-500 ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`} />
           </div>
-          <button className="bg-indigo-600 text-white px-6 py-2 rounded-xl font-black text-xs uppercase tracking-widest shadow-lg shadow-indigo-500/20 hover:bg-indigo-700 transition">
+          <button className="rounded-xl bg-indigo-600 px-5 py-2.5 text-[11px] font-black uppercase tracking-widest text-white shadow-lg shadow-indigo-500/20 transition hover:bg-indigo-700 sm:px-6">
             Reports
           </button>
         </div>
@@ -74,15 +74,15 @@ const Dashboard = () => {
         <StatsCard title="Rejection Rate" value={dashboardData.summary?.rejectionRate ?? "0.0%"} icon={FiShield} color="red" trend="Monitored" />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3 lg:gap-6">
         {/* CHART - Application Traffic */}
-        <div className={`lg:col-span-2 rounded-[2.5rem] p-8 border transition-all
+        <div className={`lg:col-span-2 rounded-[2rem] border p-5 transition-all sm:p-6 lg:rounded-[2.5rem] lg:p-8
           ${isDark ? "bg-[#1a2b4b] border-slate-700 shadow-2xl" : "bg-white border-slate-100 shadow-sm"}`}>
-          <div className="flex items-center justify-between mb-8">
-            <h2 className="text-sm font-black uppercase tracking-widest flex items-center gap-2">
+          <div className="mb-6 flex flex-col gap-3 sm:mb-8 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="flex items-center gap-2 text-xs font-black uppercase tracking-widest sm:text-sm">
               <FiActivity className="text-indigo-500" /> Verification Velocity
             </h2>
-            <div className="px-3 py-1 bg-indigo-500/10 text-indigo-500 rounded-lg text-[10px] font-black uppercase">Live Updates</div>
+            <div className="w-fit rounded-lg bg-indigo-500/10 px-3 py-1 text-[10px] font-black uppercase text-indigo-500">Live Updates</div>
           </div>
           <ResponsiveContainer width="100%" height={300}>
             <AreaChart data={dashboardData.trend || []}>
@@ -103,7 +103,7 @@ const Dashboard = () => {
 
         {/* SYSTEM HEALTH & QUICK ACTIONS */}
         <div className="space-y-6">
-          <div className={`rounded-[2rem] p-6 border ${isDark ? "bg-[#1a2b4b] border-slate-700" : "bg-white border-slate-200"}`}>
+          <div className={`rounded-[1.75rem] border p-5 sm:p-6 ${isDark ? "bg-[#1a2b4b] border-slate-700" : "bg-white border-slate-200"}`}>
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Vision AI Engine</p>
               <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-bold">Face Match Confidence</span>
@@ -121,7 +121,7 @@ const Dashboard = () => {
             </div>
           </div>
           
-          <div className="rounded-[2.5rem] p-8 bg-gradient-to-br from-indigo-600 to-indigo-900 text-white shadow-2xl relative overflow-hidden">
+          <div className="relative overflow-hidden rounded-[2rem] bg-gradient-to-br from-indigo-600 to-indigo-900 p-6 text-white shadow-2xl sm:p-8 lg:rounded-[2.5rem]">
             <FiShield size={80} className="absolute -right-4 -bottom-4 opacity-10 rotate-12" />
             <h3 className="text-xl font-black italic uppercase leading-tight tracking-tighter">Compliance Mode</h3>
             <p className="text-indigo-100 text-[11px] font-medium mt-3 opacity-80 leading-relaxed">
@@ -137,16 +137,16 @@ const Dashboard = () => {
       </div>
 
       {/* RECENT APPLICATIONS TABLE - The Review Hub */}
-      <div className={`p-8 rounded-[2.5rem] border ${isDark ? "bg-[#1a2b4b] border-slate-700 shadow-xl" : "bg-white border-slate-200"}`}>
-        <div className="flex justify-between items-center mb-8">
-          <h2 className="text-lg font-black uppercase italic flex items-center gap-3">
+      <div className={`rounded-[2rem] border p-5 sm:p-6 lg:rounded-[2.5rem] lg:p-8 ${isDark ? "bg-[#1a2b4b] border-slate-700 shadow-xl" : "bg-white border-slate-200"}`}>
+        <div className="mb-6 flex flex-col gap-3 sm:mb-8 sm:flex-row sm:items-center sm:justify-between">
+          <h2 className="flex items-center gap-3 text-base font-black uppercase italic sm:text-lg">
              <div className="w-1.5 h-6 bg-indigo-600 rounded-full"></div>
              KYC Review Queue
           </h2>
-          <button className="text-indigo-500 text-xs font-black uppercase tracking-widest hover:underline">View All Queue</button>
+          <button className="w-fit text-[11px] font-black uppercase tracking-widest text-indigo-500 hover:underline">View All Queue</button>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
+          <table className="w-full min-w-[720px] text-left text-sm">
             <thead>
               <tr className="text-slate-400 border-b border-slate-100 dark:border-slate-800">
                 <th className="pb-5 font-black uppercase text-[10px] tracking-widest">Applicant</th>

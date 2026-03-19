@@ -1,6 +1,10 @@
 const path = require("path");
 const canvas = require("canvas");
 const logger = require("../utils/logger");
+const {
+  isOpenAIVisionConfigured,
+  compareFacesWithOpenAI,
+} = require("./openaiVision.service");
 
 const { Canvas, Image, ImageData, createCanvas, loadImage } = canvas;
 
@@ -108,6 +112,30 @@ const createDescriptor = async (imagePath) => {
 };
 
 const compareFaces = async (img1, img2) => {
+  if (isOpenAIVisionConfigured()) {
+    try {
+      const result = await compareFacesWithOpenAI(img1, img2);
+
+      logger.info({
+        message: "Face comparison completed via OpenAI vision",
+        img1,
+        img2,
+        matched: result.matched,
+        score: result.score,
+      });
+
+      return result;
+    } catch (error) {
+      logger.error({
+        message: "OpenAI face comparison failed, using local fallback matcher",
+        img1,
+        img2,
+        error: error.message,
+        stack: error.stack,
+      });
+    }
+  }
+
   try {
     const faceapi = await getFaceApi();
     const [descriptor1, descriptor2] = await Promise.all([
@@ -132,6 +160,7 @@ const compareFaces = async (img1, img2) => {
       score: Number(Math.max(0, 1 - distance).toFixed(4)),
       distance: Number(distance.toFixed(4)),
       threshold: FACE_MATCH_THRESHOLD,
+      provider: "face-api",
     };
   } catch (error) {
     if (ADVANCED_FACE_MATCH_SUPPORTED) {

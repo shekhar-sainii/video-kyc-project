@@ -125,6 +125,11 @@ const UserDashboard = () => {
                     <p className="text-xs text-slate-400 font-bold uppercase tracking-widest flex items-center gap-1">
                         ID: {app._id || app.id} • Submitted: {new Date(app.submittedAt || app.submitted_at).toLocaleString()}
                     </p>
+                    {app.status === "Pending" && typeof app.attemptsRemaining === "number" && (
+                      <p className="mt-2 text-[11px] font-bold text-amber-500">
+                        Attempts left: {app.attemptsRemaining}/{app.maxVerificationAttempts || 5}
+                      </p>
+                    )}
                   </div>
                 </div>
 

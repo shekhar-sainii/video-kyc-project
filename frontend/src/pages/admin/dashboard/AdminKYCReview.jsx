@@ -87,13 +87,13 @@ const AdminKYCReview = () => {
   if (loading) {
     return (
       <div
-        className={`min-h-screen py-10 px-6 ${
+        className={`min-h-screen px-4 py-6 sm:px-6 sm:py-8 lg:py-10 ${
           isDark ? "bg-[#0f172a] text-white" : "bg-[#f8fafd] text-slate-900"
         }`}
       >
         <div className="max-w-7xl mx-auto">
           <div
-            className={`p-10 rounded-[2.5rem] border-2 text-sm font-bold ${
+            className={`rounded-[2rem] border-2 p-6 text-sm font-bold sm:p-8 lg:rounded-[2.5rem] lg:p-10 ${
               isDark
                 ? "bg-[#1a2b4b] border-slate-700"
                 : "bg-white border-slate-100 shadow-sm"
@@ -112,12 +112,12 @@ const AdminKYCReview = () => {
 
   return (
     <div
-      className={`min-h-screen py-10 px-6 transition-all ${
+      className={`min-h-screen px-4 py-6 transition-all sm:px-6 sm:py-8 lg:py-10 ${
         isDark ? "bg-[#0f172a] text-white" : "bg-[#f8fafd] text-slate-900"
       }`}
     >
       <div className="max-w-7xl mx-auto">
-        <div className="flex items-center justify-between mb-10">
+        <div className="mb-6 flex flex-col gap-3 sm:mb-8 sm:flex-row sm:items-center sm:justify-between lg:mb-10">
           <button
             onClick={() => navigate(-1)}
             className="flex items-center gap-2 text-xs font-black uppercase tracking-widest opacity-50 hover:opacity-100"
@@ -135,10 +135,10 @@ const AdminKYCReview = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 lg:gap-8">
           <div className="space-y-6">
             <div
-              className={`p-8 rounded-[2.5rem] border-2 ${
+              className={`rounded-[2rem] border-2 p-5 sm:p-6 lg:rounded-[2.5rem] lg:p-8 ${
                 isDark
                   ? "bg-[#1a2b4b] border-slate-700"
                   : "bg-white border-slate-100 shadow-sm"
@@ -147,12 +147,12 @@ const AdminKYCReview = () => {
               <h3 className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.3em] mb-6">
                 Applicant Info
               </h3>
-              <div className="flex items-center gap-4 mb-6">
+              <div className="mb-6 flex items-center gap-4">
                 <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center text-2xl font-black">
                   {viewData.applicant.charAt(0)}
                 </div>
                 <div>
-                  <h2 className="text-xl font-black tracking-tighter">
+                  <h2 className="text-lg font-black tracking-tighter sm:text-xl">
                     {viewData.applicant}
                   </h2>
                   <p className="text-xs opacity-50 font-medium">{viewData.email}</p>
@@ -181,12 +181,12 @@ const AdminKYCReview = () => {
               </div>
             </div>
 
-            <div className="p-8 rounded-[2.5rem] bg-indigo-600 text-white shadow-2xl relative overflow-hidden">
+            <div className="relative overflow-hidden rounded-[2rem] bg-indigo-600 p-6 text-white shadow-2xl sm:p-8 lg:rounded-[2.5rem]">
               <FiShield className="absolute -right-4 -bottom-4 opacity-10" size={100} />
               <p className="text-[10px] font-black uppercase tracking-widest opacity-60 mb-2">
                 AI Vision Score
               </p>
-              <h2 className="text-5xl font-black italic">
+              <h2 className="text-4xl font-black italic sm:text-5xl">
                 {viewData.faceScore === null ? "N/A" : `${viewData.faceScore}%`}
               </h2>
               <p className="text-xs font-bold mt-4 text-indigo-100">
@@ -203,7 +203,7 @@ const AdminKYCReview = () => {
 
           <div className="lg:col-span-2 space-y-8">
             <div
-              className={`p-8 rounded-[2.5rem] border-2 ${
+              className={`rounded-[2rem] border-2 p-5 sm:p-6 lg:rounded-[2.5rem] lg:p-8 ${
                 isDark ? "bg-[#1a2b4b] border-slate-700" : "bg-white border-slate-100"
               }`}
             >
@@ -226,9 +226,9 @@ const AdminKYCReview = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 md:gap-8">
               <div
-                className={`p-6 rounded-[2rem] border-2 ${
+                className={`rounded-[1.75rem] border-2 p-5 sm:p-6 lg:rounded-[2rem] ${
                   isDark ? "bg-[#1a2b4b] border-slate-700" : "bg-white border-slate-100"
                 }`}
               >
@@ -238,7 +238,7 @@ const AdminKYCReview = () => {
                 <ReviewImage src={viewData.panCardImage} alt="PAN" wide />
               </div>
               <div
-                className={`p-6 rounded-[2rem] border-2 ${
+                className={`rounded-[1.75rem] border-2 p-5 sm:p-6 lg:rounded-[2rem] ${
                   isDark ? "bg-[#1a2b4b] border-slate-700" : "bg-white border-slate-100"
                 }`}
               >

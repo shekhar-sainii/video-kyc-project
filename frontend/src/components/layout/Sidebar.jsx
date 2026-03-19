@@ -1,27 +1,34 @@
-import React from "react";
-import { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { useSelector } from 'react-redux';
-import { adminMenu } from '../../config/adminMenu';
-import { filterMenuByRole } from '../../utils/menuUtils';
+import React, { useEffect, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
+import { useSelector } from "react-redux";
+import { adminMenu } from "../../config/adminMenu";
+import { filterMenuByRole } from "../../utils/menuUtils";
 
 import {
   MdChevronLeft,
   MdChevronRight,
   MdExpandMore,
   MdExpandLess,
+  MdClose,
 } from 'react-icons/md';
 
-const Sidebar = () => {
+const Sidebar = ({
+  collapsed = false,
+  setCollapsed = () => {},
+  mobileOpen = false,
+  setMobileOpen = () => {},
+}) => {
   const role = useSelector((state) => state.auth.role);
   const theme = useSelector((state) => state.theme.mode);
-  const isDark = theme === 'dark';
+  const isDark = theme === "dark";
 
   const location = useLocation();
   const menu = role ? filterMenuByRole(adminMenu, role) : adminMenu;
-
-  const [collapsed, setCollapsed] = useState(false);
   const [openMenus, setOpenMenus] = useState({});
+
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [location.pathname, setMobileOpen]);
 
   const toggleMenu = (label) => {
     setOpenMenus((prev) => ({
@@ -33,20 +40,29 @@ const Sidebar = () => {
   const isActive = (path) => location.pathname === path;
 
   return (
-    <aside
-      className={`
-        ${collapsed ? 'w-20' : 'w-72'}
-        h-screen sticky top-0 left-0
-        transition-all duration-300 ease-in-out
-        border-r flex flex-col
-        ${isDark
-          ? 'bg-[#1a2b4b] border-gray-700 text-gray-200'
-          : 'bg-white border-gray-100 text-[#1a2b4b] shadow-sm'}
-        z-50
-      `}
-    >
+    <>
+      {mobileOpen && (
+        <button
+          type="button"
+          aria-label="Close admin navigation"
+          onClick={() => setMobileOpen(false)}
+          className="fixed inset-0 z-40 bg-slate-950/50 backdrop-blur-[1px] lg:hidden"
+        />
+      )}
+
+      <aside
+        className={`
+          fixed inset-y-0 left-0 z-50 flex h-screen w-72 flex-col border-r transition-all duration-300 ease-in-out lg:sticky
+          ${collapsed ? "lg:w-20" : "lg:w-72"}
+          ${mobileOpen ? "translate-x-0" : "-translate-x-full"}
+          lg:translate-x-0
+          ${isDark
+            ? "bg-[#1a2b4b] border-gray-700 text-gray-200"
+            : "bg-white border-gray-100 text-[#1a2b4b] shadow-sm"}
+        `}
+      >
       {/* --- 1. BRAND LOGO SECTION (Fixed) --- */}
-      <div className="flex items-center justify-between py-6 px-6 shrink-0">
+      <div className="flex items-center justify-between px-4 py-5 sm:px-6 shrink-0">
         {!collapsed && (
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold shadow-lg shadow-blue-500/30">
@@ -61,18 +77,30 @@ const Sidebar = () => {
           </div>
         )}
 
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          className={`p-2 rounded-lg transition-all ${
-            isDark ? 'bg-gray-800 text-gray-400 hover:text-white' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
-          } ${collapsed ? 'mx-auto' : ''}`}
-        >
-          {collapsed ? <MdChevronRight size={20} /> : <MdChevronLeft size={20} />}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setMobileOpen(false)}
+            className={`p-2 rounded-lg transition-all lg:hidden ${
+              isDark ? "bg-gray-800 text-gray-300 hover:text-white" : "bg-slate-100 text-slate-600"
+            }`}
+            aria-label="Close menu"
+          >
+            <MdClose size={20} />
+          </button>
+          <button
+            onClick={() => setCollapsed(!collapsed)}
+            className={`hidden p-2 rounded-lg transition-all lg:block ${
+              isDark ? "bg-gray-800 text-gray-400 hover:text-white" : "bg-blue-50 text-blue-600 hover:bg-blue-100"
+            } ${collapsed ? "mx-auto" : ""}`}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {collapsed ? <MdChevronRight size={20} /> : <MdChevronLeft size={20} />}
+          </button>
+        </div>
       </div>
 
       {/* --- 2. SCROLLABLE MENU LIST --- */}
-      <nav className="flex-1 overflow-y-auto px-4 space-y-1 custom-sidebar-scroll">
+      <nav className="flex-1 overflow-y-auto px-3 sm:px-4 space-y-1 custom-sidebar-scroll">
         {menu.map((item) => {
           const Icon = item.icon;
           const hasChildren = item.children?.length;
@@ -155,7 +183,8 @@ const Sidebar = () => {
         .custom-sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
         .custom-sidebar-scroll::-webkit-scrollbar-thumb { background: rgba(59, 130, 246, 0.2); border-radius: 10px; }
       `}</style>
-    </aside>
+      </aside>
+    </>
   );
 };
 
