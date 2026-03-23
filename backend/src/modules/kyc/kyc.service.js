@@ -255,6 +255,8 @@ class KYCService {
       compareFaces(application.uploadedPhoto, verificationData.selfieImage),
     ]);
 
+    console.log(panExtractionResult, faceComparisonResult,"panExtractionResult and faceComparisonResult");
+    
     if (panExtractionResult.status === "rejected" || faceComparisonResult.status === "rejected") {
       logger.error({
         message: "KYC verification dependency failed",
@@ -299,6 +301,8 @@ class KYCService {
 
     const extractedPan = panExtractionResult.value;
     const faceMatchResult = faceComparisonResult.value;
+
+    console.log(extractedPan, faceMatchResult,"extractedPan and faceMatchResult");
 
     if (!extractedPan) {
       const error = new Error(

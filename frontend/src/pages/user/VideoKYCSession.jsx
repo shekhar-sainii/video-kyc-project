@@ -3,11 +3,19 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { FiCamera, FiShield, FiMic, FiRefreshCw } from "react-icons/fi";
 import Swal from "sweetalert2";
+import * as faceapi from "face-api.js";
 import kycService from "../../services/kycService";
 
 const VideoKYCSession = () => {
   const AUTO_FACE_STABLE_FRAMES = 3;
   const AUTO_PAN_STABLE_FRAMES = 4;
+  // Analysis interval in step 3 is ~250ms; keep blink window generous (~10s).
+  const AUTO_BLINK_WINDOW_FRAMES = 40;
+  // After face is 3/3 aligned, ignore brief bad frames (blink / detector jitter).
+  const SELFIE_MISALIGN_GRACE_FRAMES = 14;
+  // With a relatively slow analysis interval, require only one detected
+  // "eyes closed" sample frame to arm the blink.
+  const MIN_BLINK_CLOSED_FRAMES = 1;
 
   const { id } = useParams();
   const navigate = useNavigate();
@@ -18,12 +26,23 @@ const VideoKYCSession = () => {
   const capturedImagesRef = useRef({ pan: null, selfie: null });
   const startAttemptRef = useRef(0);
   const faceDetectorRef = useRef(null);
+  const modelsLoadErrorRef = useRef(null);
+  const frameSeqRef = useRef(0);
+  const earOpenRef = useRef(null);
+  const blinkClosedFramesRef = useRef(0);
+  const blinkArmedRef = useRef(false);
+  const lastBlinkSeqRef = useRef(-9999);
   const analysisIntervalRef = useRef(null);
   const captureLockRef = useRef(false);
   const switchInProgressRef = useRef(false);
   const availableVideoDevicesRef = useRef([]);
   const panStableFramesRef = useRef(0);
   const selfieStableFramesRef = useRef(0);
+  // When selfie alignment reaches the threshold, we arm a short time window
+  // in which the user must blink once to verify.
+  const blinkVerificationArmedSeqRef = useRef(null);
+  const selfieAlignedLatchedRef = useRef(false);
+  const selfieMisalignedStreakRef = useRef(0);
   const [step, setStep] = useState(1); // 1: Intro, 2: PAN, 3: Selfie, 4: Verifying
   const [cameraState, setCameraState] = useState({ status: "loading", message: "Starting camera..." });
   const [cameraFacingMode, setCameraFacingMode] = useState("user");
@@ -31,6 +50,10 @@ const VideoKYCSession = () => {
   const [activeDeviceId, setActiveDeviceId] = useState(null);
   const [guideState, setGuideState] = useState("neutral");
   const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [panStableCount, setPanStableCount] = useState(0);
+  const [selfieStableCount, setSelfieStableCount] = useState(0);
+  /** True once face held steady 3/3; stays true through short dropout (blink / detector jitter). */
+  const [selfieFaceReady, setSelfieFaceReady] = useState(false);
 
   const loadVideoDevices = async (preferredFacingMode = cameraFacingMode) => {
     if (!navigator.mediaDevices?.enumerateDevices) {
@@ -96,6 +119,28 @@ const VideoKYCSession = () => {
       variance,
       edgeDensity: edgeCount / Math.max((width - 1) * (height - 1), 1),
     };
+  };
+
+  const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+  const dist = (p1, p2) => Math.hypot(p1.x - p2.x, p1.y - p2.y);
+
+  // Eye Aspect Ratio (EAR) - lower values mean eyes are more closed.
+  // Landmarks indices for 68-point model:
+  // - Left eye: 36-41
+  // - Right eye: 42-47
+  const getEyeEAR = (landmarks, eye) => {
+    const positions = landmarks.positions;
+    const p1 = positions[eye[0]];
+    const p2 = positions[eye[1]];
+    const p3 = positions[eye[2]];
+    const p4 = positions[eye[3]];
+    const p5 = positions[eye[4]];
+    const p6 = positions[eye[5]];
+
+    const vertical = dist(p2, p6) + dist(p3, p5);
+    const horizontal = 2 * dist(p1, p4);
+    return horizontal ? vertical / horizontal : 0;
   };
 
   const getPanAssessment = (ctx, videoWidth, videoHeight) => {
@@ -267,7 +312,7 @@ const VideoKYCSession = () => {
           },
           audio: false,
         });
-      } catch (constraintError) {
+      } catch {
         mediaStream = await navigator.mediaDevices.getUserMedia({
           video: {
             ...(preferredDeviceId ? { deviceId: { ideal: preferredDeviceId } } : { facingMode }),
@@ -307,9 +352,13 @@ const VideoKYCSession = () => {
       setCameraState({ status: "ready", message: "Camera connected." });
       panStableFramesRef.current = 0;
       selfieStableFramesRef.current = 0;
+      selfieAlignedLatchedRef.current = false;
+      selfieMisalignedStreakRef.current = 0;
       captureLockRef.current = false;
       switchInProgressRef.current = false;
       setGuideState("neutral");
+      blinkVerificationArmedSeqRef.current = null;
+      setSelfieFaceReady(false);
       await loadVideoDevices(facingMode);
     } catch (error) {
       if (error?.name === "NotReadableError" && retryCount < 2) {
@@ -380,12 +429,75 @@ const VideoKYCSession = () => {
   }, []);
 
   useEffect(() => {
-    if (typeof window !== "undefined" && "FaceDetector" in window) {
-      faceDetectorRef.current = new window.FaceDetector({
-        fastMode: true,
-        maxDetectedFaces: 1,
-      });
-    }
+    let cancelled = false;
+    modelsLoadErrorRef.current = null;
+
+    const loadFaceApi = async () => {
+      try {
+        // Face models in: `frontend/public/models/*`
+        // Depending on how the SPA is mounted (dev vs preview vs ngrok path),
+        // an absolute `/models` can fail even if relative model requests work.
+        // Try a few safe base URL candidates until one succeeds.
+        const viteBase = import.meta?.env?.BASE_URL ?? "/";
+        const candidates = [
+          "/models",
+          `${viteBase}models`,
+          "./models",
+          "models",
+          `${window.location.origin}/models`,
+        ];
+
+        let lastErr = null;
+        for (const baseUrl of candidates) {
+          try {
+            // face-api.js v0.22+ uses `faceLandmark68Net` (and `faceLandmark68TinyNet`),
+            // while older versions used `faceLandmark68`.
+            // Load whichever landmark net exists in this runtime.
+            const landmarkNet =
+              faceapi.nets.faceLandmark68Net ||
+              faceapi.nets.faceLandmark68TinyNet ||
+              faceapi.nets.faceLandmark68;
+            if (!landmarkNet?.loadFromUri) {
+              throw new Error(
+                "face-api landmark model net not available (expected faceLandmark68Net / faceLandmark68TinyNet)."
+              );
+            }
+
+            if (!faceapi.nets.tinyFaceDetector?.loadFromUri) {
+              throw new Error("face-api tinyFaceDetector model net not available.");
+            }
+
+            await Promise.all([
+              faceapi.nets.tinyFaceDetector.loadFromUri(baseUrl),
+              landmarkNet.loadFromUri(baseUrl),
+            ]);
+            if (cancelled) return;
+            faceDetectorRef.current = { ready: true };
+            return;
+          } catch (err) {
+            lastErr = err;
+          }
+        }
+
+        if (cancelled) return;
+        modelsLoadErrorRef.current = lastErr;
+        // Keep the full error for debugging.
+        // eslint-disable-next-line no-console
+        console.error("Face-api model load failed:", lastErr);
+        faceDetectorRef.current = { ready: false };
+      } catch (err) {
+        if (cancelled) return;
+        modelsLoadErrorRef.current = err;
+        // eslint-disable-next-line no-console
+        console.error("Face-api model load failed:", err);
+        faceDetectorRef.current = { ready: false };
+      }
+    };
+
+    void loadFaceApi();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -429,19 +541,21 @@ const VideoKYCSession = () => {
       ctx.drawImage(videoRef.current, 0, 0, videoWidth, videoHeight);
 
       if (step === 2) {
-        const panWarmupThreshold = Math.max(1, AUTO_PAN_STABLE_FRAMES - 2);
         const panAssessment = getPanAssessment(ctx, videoWidth, videoHeight);
 
         if (panAssessment.stable) {
           panStableFramesRef.current += 1;
-          setGuideState(panStableFramesRef.current >= panWarmupThreshold ? "valid" : "neutral");
-          setAutoStatus(`PAN detected, hold steady... ${panStableFramesRef.current}/${AUTO_PAN_STABLE_FRAMES}`);
+          setPanStableCount(Math.min(AUTO_PAN_STABLE_FRAMES, panStableFramesRef.current));
+          setGuideState(panStableFramesRef.current >= AUTO_PAN_STABLE_FRAMES ? "valid" : "neutral");
+          setAutoStatus("PAN detected, hold steady...");
         } else if (panAssessment.almostStable) {
           panStableFramesRef.current = 0;
+          setPanStableCount(0);
           setGuideState("neutral");
           setAutoStatus("PAN almost aligned. Hold it flatter and a little closer.");
         } else {
           panStableFramesRef.current = 0;
+          setPanStableCount(0);
           setGuideState("invalid");
           setAutoStatus(panAssessment.message);
         }
@@ -455,25 +569,74 @@ const VideoKYCSession = () => {
         return;
       }
 
-      if (!faceDetectorRef.current) {
+      const faceApiState = faceDetectorRef.current;
+      if (!faceApiState?.ready) {
         setGuideState("neutral");
-        setAutoStatus("Face auto-detect needs a newer browser. Use manual capture if needed.");
+        const err = modelsLoadErrorRef.current;
+        const errMsg = err?.message ? String(err.message) : err ? String(err) : "";
+        const shortErrMsg = errMsg.length > 120 ? `${errMsg.slice(0, 120)}...` : errMsg;
+        setAutoStatus(err ? `Face detection models failed to load: ${shortErrMsg || "unknown error"}` : "Loading face detection models...");
         return;
       }
 
       try {
-        const faces = await faceDetectorRef.current.detect(canvas);
-        if (!faces?.length) {
+        const inputSize = isMobileViewport ? 160 : 224;
+        const options = new faceapi.TinyFaceDetectorOptions({
+          inputSize,
+          scoreThreshold: 0.5,
+        });
+
+        frameSeqRef.current += 1;
+        const currentSeq = frameSeqRef.current;
+
+        const detection = await faceapi
+          .detectSingleFace(canvas, options)
+          .withFaceLandmarks();
+
+        if (!detection) {
+          if (selfieAlignedLatchedRef.current) {
+            selfieMisalignedStreakRef.current += 1;
+            if (selfieMisalignedStreakRef.current <= SELFIE_MISALIGN_GRACE_FRAMES) {
+              selfieStableFramesRef.current = AUTO_FACE_STABLE_FRAMES;
+              setSelfieStableCount(AUTO_FACE_STABLE_FRAMES);
+              setGuideState("neutral");
+              setAutoStatus("Blink once to verify — hold steady if capture is slow.");
+              const faceAlignedGrace =
+                selfieAlignedLatchedRef.current ||
+                selfieStableFramesRef.current >= AUTO_FACE_STABLE_FRAMES;
+              const blinkSeqGrace = lastBlinkSeqRef.current;
+              const blinkVerifiedGrace =
+                blinkVerificationArmedSeqRef.current != null &&
+                blinkSeqGrace >= blinkVerificationArmedSeqRef.current &&
+                blinkSeqGrace - blinkVerificationArmedSeqRef.current <= AUTO_BLINK_WINDOW_FRAMES;
+              if (faceAlignedGrace && blinkVerifiedGrace) {
+                captureLockRef.current = true;
+                setGuideState("valid");
+                setAutoStatus("Selfie captured successfully.");
+                captureFrame("selfie");
+              }
+              return;
+            }
+          }
+          selfieAlignedLatchedRef.current = false;
+          selfieMisalignedStreakRef.current = 0;
           selfieStableFramesRef.current = 0;
+          setSelfieStableCount(0);
+          setSelfieFaceReady(false);
           setGuideState("invalid");
           setAutoStatus("Look into the camera and keep your face inside the guide.");
+          blinkClosedFramesRef.current = 0;
+          blinkArmedRef.current = false;
+          blinkVerificationArmedSeqRef.current = null;
+          lastBlinkSeqRef.current = -9999;
           return;
         }
 
-        const face = faces[0].boundingBox;
-        const centerX = face.x + (face.width / 2);
-        const centerY = face.y + (face.height / 2);
-        const normalizedCenterX = centerX / videoWidth;
+        const face = detection.detection.box;
+        const centerX = face.x + face.width / 2;
+        const centerY = face.y + face.height / 2;
+        const displayCenterX = cameraFacingMode === "user" ? videoWidth - centerX : centerX;
+        const normalizedCenterX = displayCenterX / videoWidth;
         const normalizedCenterY = centerY / videoHeight;
         const normalizedFaceWidth = face.width / videoWidth;
         const normalizedFaceHeight = face.height / videoHeight;
@@ -485,8 +648,6 @@ const VideoKYCSession = () => {
           Math.min(Math.floor(face.width), videoWidth - Math.max(Math.floor(face.x), 0)),
           Math.min(Math.floor(face.height), videoHeight - Math.max(Math.floor(face.y), 0))
         );
-        const faceWarmupThreshold = Math.max(1, AUTO_FACE_STABLE_FRAMES - 1);
-
         const selfieLooksStable =
           normalizedCenterX > (isMobileViewport ? 0.3 : 0.36) &&
           normalizedCenterX < (isMobileViewport ? 0.7 : 0.64) &&
@@ -500,17 +661,117 @@ const VideoKYCSession = () => {
           faceMetrics.meanBrightness < (isMobileViewport ? 225 : 210) &&
           faceMetrics.variance > (isMobileViewport ? 120 : 180);
 
-        if (selfieLooksStable) {
-          selfieStableFramesRef.current += 1;
-          setGuideState(selfieStableFramesRef.current >= faceWarmupThreshold ? "valid" : "neutral");
-          setAutoStatus(`Face aligned, auto-capturing... ${selfieStableFramesRef.current}/${AUTO_FACE_STABLE_FRAMES}`);
-        } else {
-          selfieStableFramesRef.current = 0;
-          setGuideState("invalid");
-          setAutoStatus("Center your face and improve lighting for auto-capture.");
+        // Blink detection (landmarks-based).
+        if (detection.landmarks) {
+          const leftEAR = getEyeEAR(detection.landmarks, [36, 37, 38, 39, 40, 41]);
+          const rightEAR = getEyeEAR(detection.landmarks, [42, 43, 44, 45, 46, 47]);
+          const ear = (leftEAR + rightEAR) / 2;
+
+          // Use a learned open-eye baseline; if we don't have it yet, don't
+          // classify eyes-closed this frame.
+          const openBaseline = earOpenRef.current;
+          // Lower min clamp to be more tolerant across devices/angles.
+          const closedThreshold = openBaseline == null ? null : clamp(openBaseline * 0.62, 0.06, 0.3);
+
+          const eyesClosed = closedThreshold == null ? false : ear < closedThreshold;
+          if (eyesClosed) {
+            blinkClosedFramesRef.current += 1;
+            if (blinkClosedFramesRef.current >= MIN_BLINK_CLOSED_FRAMES) {
+              blinkArmedRef.current = true;
+            }
+          } else {
+            if (blinkArmedRef.current && blinkClosedFramesRef.current >= MIN_BLINK_CLOSED_FRAMES) {
+              // Timestamp on first "eyes opened" sample after the blink.
+              // This makes the captured selfie more likely to have eyes open.
+              lastBlinkSeqRef.current = currentSeq;
+            }
+            blinkClosedFramesRef.current = 0;
+            blinkArmedRef.current = false;
+
+            // Update open-eye baseline only when eyes look open.
+            if (ear > 0.12) {
+              earOpenRef.current = earOpenRef.current == null ? ear : (0.9 * earOpenRef.current + 0.1 * ear);
+            }
+          }
         }
 
-        if (selfieStableFramesRef.current >= AUTO_FACE_STABLE_FRAMES) {
+        if (selfieLooksStable) {
+          selfieMisalignedStreakRef.current = 0;
+          selfieStableFramesRef.current += 1;
+          setSelfieStableCount(Math.min(AUTO_FACE_STABLE_FRAMES, selfieStableFramesRef.current));
+          const faceAlignedNow = selfieStableFramesRef.current >= AUTO_FACE_STABLE_FRAMES;
+
+          if (faceAlignedNow) {
+            selfieAlignedLatchedRef.current = true;
+            setSelfieFaceReady(true);
+            if (blinkVerificationArmedSeqRef.current == null) {
+              // Arm the verification window when alignment reaches 3/3.
+              blinkVerificationArmedSeqRef.current = currentSeq;
+            }
+
+            const blinkSeq = lastBlinkSeqRef.current;
+            const blinkVerified =
+              blinkSeq >= blinkVerificationArmedSeqRef.current &&
+              blinkSeq - blinkVerificationArmedSeqRef.current <= AUTO_BLINK_WINDOW_FRAMES;
+
+            if (blinkVerified) {
+              setGuideState("valid");
+              setAutoStatus("Blink verified. Capturing selfie...");
+            } else {
+              setGuideState("neutral");
+              setAutoStatus("Face aligned. Please blink once to verify.");
+            }
+          } else {
+            setGuideState("neutral");
+            setAutoStatus("Face aligned, hold steady...");
+          }
+        } else if (selfieAlignedLatchedRef.current) {
+          selfieMisalignedStreakRef.current += 1;
+          if (selfieMisalignedStreakRef.current <= SELFIE_MISALIGN_GRACE_FRAMES) {
+            selfieStableFramesRef.current = AUTO_FACE_STABLE_FRAMES;
+            setSelfieStableCount(AUTO_FACE_STABLE_FRAMES);
+            const blinkSeq = lastBlinkSeqRef.current;
+            const blinkVerified =
+              blinkVerificationArmedSeqRef.current != null &&
+              blinkSeq >= blinkVerificationArmedSeqRef.current &&
+              blinkSeq - blinkVerificationArmedSeqRef.current <= AUTO_BLINK_WINDOW_FRAMES;
+            if (blinkVerified) {
+              setGuideState("valid");
+              setAutoStatus("Blink verified. Capturing selfie...");
+            } else {
+              setGuideState("neutral");
+              setAutoStatus("Face aligned. Please blink once to verify.");
+            }
+          } else {
+            selfieAlignedLatchedRef.current = false;
+            selfieMisalignedStreakRef.current = 0;
+            selfieStableFramesRef.current = 0;
+            setSelfieStableCount(0);
+            setSelfieFaceReady(false);
+            setGuideState("invalid");
+            setAutoStatus("Center your face and improve lighting for auto-capture.");
+            blinkVerificationArmedSeqRef.current = null;
+            lastBlinkSeqRef.current = -9999;
+          }
+        } else {
+          selfieStableFramesRef.current = 0;
+          setSelfieStableCount(0);
+          setSelfieFaceReady(false);
+          setGuideState("invalid");
+          setAutoStatus("Center your face and improve lighting for auto-capture.");
+          blinkVerificationArmedSeqRef.current = null;
+          lastBlinkSeqRef.current = -9999;
+        }
+
+        const faceAlignedNow =
+          selfieAlignedLatchedRef.current || selfieStableFramesRef.current >= AUTO_FACE_STABLE_FRAMES;
+        const blinkSeq = lastBlinkSeqRef.current;
+        const blinkVerified =
+          blinkVerificationArmedSeqRef.current != null &&
+          blinkSeq >= blinkVerificationArmedSeqRef.current &&
+          blinkSeq - blinkVerificationArmedSeqRef.current <= AUTO_BLINK_WINDOW_FRAMES;
+
+        if (faceAlignedNow && blinkVerified) {
           captureLockRef.current = true;
           setGuideState("valid");
           setAutoStatus("Selfie captured successfully.");
@@ -522,12 +783,18 @@ const VideoKYCSession = () => {
       }
     };
 
+    const intervalMs = step === 3 ? 250 : 700;
+    let analysisRunning = false;
     analysisIntervalRef.current = setInterval(() => {
-      void analyzeFrame();
-    }, 700);
+      if (analysisRunning) return;
+      analysisRunning = true;
+      void analyzeFrame().finally(() => {
+        analysisRunning = false;
+      });
+    }, intervalMs);
 
     return () => clearAnalysisLoop();
-  }, [cameraState.status, step, isMobileViewport]);
+  }, [cameraState.status, step, isMobileViewport, cameraFacingMode]);
 
   // --- 4. IMAGE CAPTURE ---
   const getOptimizedCaptureDataUrl = (type) => {
@@ -577,6 +844,16 @@ const VideoKYCSession = () => {
     capturedImagesRef.current = updated;
     panStableFramesRef.current = 0;
     selfieStableFramesRef.current = 0;
+    selfieAlignedLatchedRef.current = false;
+    selfieMisalignedStreakRef.current = 0;
+    earOpenRef.current = null;
+    blinkClosedFramesRef.current = 0;
+    blinkArmedRef.current = false;
+    lastBlinkSeqRef.current = -9999;
+    blinkVerificationArmedSeqRef.current = null;
+    setPanStableCount(0);
+    setSelfieStableCount(0);
+    setSelfieFaceReady(false);
     setGuideState("valid");
 
     if (type === "pan") {
@@ -762,6 +1039,11 @@ const VideoKYCSession = () => {
                             <span className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] ${guideTone.panel}`}>
                               {guideTone.label}
                             </span>
+                            <p className="text-xs text-white/70">
+                              {step === 2
+                                ? `PAN frames: ${panStableCount}/${AUTO_PAN_STABLE_FRAMES}`
+                                : `Face frames: ${selfieStableCount}/${AUTO_FACE_STABLE_FRAMES}`}
+                            </p>
                             <p className="text-xs text-white/75">{autoStatus}</p>
                           </div>
                         )}
@@ -786,8 +1068,10 @@ const VideoKYCSession = () => {
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                     <div className={`border-4 border-dashed animate-pulse transition-all duration-300 ${guideTone.ring} ${
                         step === 2
-                          ? "h-[30%] w-[82%] rounded-3xl sm:h-1/2 sm:w-2/3"
-                          : "w-[45%] aspect-square rounded-full sm:w-1/3"
+                          ? "h-[30%] w-[70%] rounded-3xl sm:h-1/2 sm:w-[58%]"
+                          : isMobileViewport
+                            ? "h-[56%] w-[68%] rounded-[2rem]"
+                            : "h-[50%] w-[52%] rounded-[2.25rem]"
                     }`}></div>
                 </div>
             )}
@@ -797,18 +1081,48 @@ const VideoKYCSession = () => {
       {/* Control Footer */}
       <div className={`border-t px-4 py-4 sm:px-6 sm:py-5 lg:px-8 ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
         <div className="mx-auto flex w-full max-w-7xl flex-col items-center justify-center gap-3 sm:flex-row">
-        {step < 4 && (
-            <button 
-                disabled={cameraState.status !== "ready"}
-                onClick={() => step === 1 ? guideUser(2) : captureFrame(step === 2 ? 'pan' : 'selfie')}
-                className={`flex w-full max-w-sm items-center justify-center gap-3 rounded-2xl px-6 py-4 text-center text-[11px] font-black uppercase tracking-widest shadow-xl transition-all sm:w-auto sm:px-10 sm:text-xs lg:px-12 ${
-                  cameraState.status === "ready"
-                    ? "bg-indigo-600 text-white shadow-indigo-600/30 active:scale-95 hover:bg-indigo-700"
-                    : "cursor-not-allowed bg-slate-400 text-white/80 shadow-none"
-                }`}
-            >
-                {step === 1 ? "I'm Ready" : step === 2 ? <><FiCamera /> Capture PAN</> : <><FiCamera /> Take Selfie</>}
-            </button>
+        {step === 1 && (
+          <button
+            disabled={cameraState.status !== "ready"}
+            onClick={() => guideUser(2)}
+            className={`flex w-full max-w-sm items-center justify-center gap-3 rounded-2xl px-6 py-4 text-center text-[11px] font-black uppercase tracking-widest shadow-xl transition-all sm:w-auto sm:px-10 sm:text-xs lg:px-12 ${
+              cameraState.status === "ready"
+                ? "bg-indigo-600 text-white shadow-indigo-600/30 active:scale-95 hover:bg-indigo-700"
+                : "cursor-not-allowed bg-slate-400 text-white/80 shadow-none"
+            }`}
+          >
+            I'm Ready
+          </button>
+        )}
+
+        {step === 2 && (
+          <button
+            type="button"
+            disabled={cameraState.status !== "ready" || guideState !== "valid"}
+            onClick={() => captureFrame("pan")}
+            className={`flex w-full max-w-sm items-center justify-center gap-3 rounded-2xl px-6 py-4 text-center text-[11px] font-black uppercase tracking-widest shadow-xl transition-all sm:w-auto sm:px-10 sm:text-xs ${
+              cameraState.status === "ready" && guideState === "valid"
+                ? "bg-emerald-600 text-white shadow-emerald-600/30 active:scale-95 hover:bg-emerald-700"
+                : "cursor-not-allowed bg-slate-400 text-white/80 shadow-none"
+            }`}
+          >
+            <FiCamera /> Capture PAN
+          </button>
+        )}
+
+        {step === 3 && (
+          <button
+            type="button"
+            disabled={cameraState.status !== "ready" || !selfieFaceReady}
+            onClick={() => captureFrame("selfie")}
+            className={`flex w-full max-w-sm items-center justify-center gap-3 rounded-2xl px-6 py-4 text-center text-[11px] font-black uppercase tracking-widest shadow-xl transition-all sm:w-auto sm:px-10 sm:text-xs ${
+              cameraState.status === "ready" && selfieFaceReady
+                ? "bg-indigo-600 text-white shadow-indigo-600/30 active:scale-95 hover:bg-indigo-700"
+                : "cursor-not-allowed bg-slate-400 text-white/80 shadow-none"
+            }`}
+          >
+            <FiCamera /> Capture Face
+          </button>
         )}
 
         <button

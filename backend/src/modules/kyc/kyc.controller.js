@@ -105,6 +105,8 @@ class KYCController {
         selfieImage,
       });
 
+      console.log(result);
+      
       return res.status(StatusCodes.OK).json({
         success: true,
         message: "Verification completed",
