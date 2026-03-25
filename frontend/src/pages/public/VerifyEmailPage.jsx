@@ -3,6 +3,8 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { FiAlertCircle, FiCheckCircle, FiLoader, FiMail, FiShield } from "react-icons/fi";
 import authService from "../../services/authService";
+import BeautifulLoader from "../../components/common/BeautifulLoader";
+
 
 const VerifyEmailPage = () => {
   const isDark = useSelector((state) => state.theme.mode === "dark");
@@ -105,7 +107,12 @@ const VerifyEmailPage = () => {
                       : "bg-indigo-500/10 text-indigo-500"
                 }`}
               >
-                {status === "loading" && <FiLoader className="animate-spin" size={30} />}
+                {status === "loading" && (
+                  <div className="scale-75 -my-8">
+                    <BeautifulLoader text="Verifying Token..." fullScreen={false} />
+                  </div>
+                )}
+
                 {status === "success" && <FiCheckCircle size={30} />}
                 {status === "error" && <FiAlertCircle size={30} />}
               </div>

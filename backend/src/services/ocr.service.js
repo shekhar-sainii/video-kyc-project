@@ -6,6 +6,7 @@ const {
 } = require("./openaiVision.service");
 
 const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
+const VALID_PAN_TYPES = ["P", "C", "H", "A", "B", "G", "J", "L", "F", "T"];
 
 const ALPHA_SUBSTITUTIONS = {
   "0": "O",
@@ -20,17 +21,19 @@ const ALPHA_SUBSTITUTIONS = {
 
 const DIGIT_SUBSTITUTIONS = {
   O: "0",
-  Q: "0",
+  Q: "9",
   D: "0",
   U: "0",
   I: "1",
   L: "1",
-  T: "1",
+  T: "7",
   Z: "2",
   A: "4",
   S: "5",
-  G: "6",
+  G: "9",
   B: "8",
+  "8": "8",
+  "6": "6",
 };
 
 const OCR_CONFIGS = [
@@ -44,28 +47,41 @@ const OCR_CONFIGS = [
     psm: Tesseract.PSM.SINGLE_BLOCK,
     whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
   },
+  {
+    name: "sparse-text",
+    psm: Tesseract.PSM.SPARSE_TEXT,
+    whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+  },
 ];
 
 const PREPROCESS_VARIANTS = [
   { name: "threshold-mid", threshold: 150, contrast: 1.2, sharpen: true },
-  { name: "grayscale-boost", threshold: null, contrast: 1.45, sharpen: true },
+  { name: "threshold-low", threshold: 125, contrast: 1.3, sharpen: true },
+  { name: "threshold-high", threshold: 175, contrast: 1.4, sharpen: true },
+  { name: "grayscale-boost", threshold: null, contrast: 1.5, sharpen: true },
+  { name: "grayscale-aggressive", threshold: null, contrast: 1.8, sharpen: true },
 ];
 
 const CROP_PASSES = [
   { name: "full-frame", widthRatio: 1, heightRatio: 1, offsetXRatio: 0, offsetYRatio: 0, scale: 2, fallback: false },
   { name: "pan-band-tight", widthRatio: 0.48, heightRatio: 0.12, offsetXRatio: -0.02, offsetYRatio: -0.02, scale: 5, fallback: true },
   { name: "pan-band-wide", widthRatio: 0.62, heightRatio: 0.16, offsetXRatio: -0.03, offsetYRatio: -0.01, scale: 4, fallback: true },
+  { name: "pan-band-lower", widthRatio: 0.55, heightRatio: 0.14, offsetXRatio: 0.05, offsetYRatio: 0.12, scale: 4, fallback: true },
+  { name: "pan-band-narrow", widthRatio: 0.38, heightRatio: 0.10, offsetXRatio: 0, offsetYRatio: 0, scale: 6, fallback: true },
 ];
 
 const CROP_WEIGHTS = {
   "full-frame": 8,
   "pan-band-tight": 5,
   "pan-band-wide": 4,
+  "pan-band-lower": 6,
+  "pan-band-narrow": 3,
 };
 
 const OCR_WEIGHTS = {
   "pan-line": 5,
   "single-block": 3,
+  "sparse-text": 2,
 };
 
 const SOURCE_WEIGHTS = {
@@ -108,7 +124,15 @@ const normalizePanWindow = (windowValue) => {
   }
 
   const candidate = chars.join("");
-  return PAN_REGEX.test(candidate) ? candidate : null;
+  if (!PAN_REGEX.test(candidate)) return null;
+  
+  // 4th character validation (Entity Type)
+  const fourthChar = candidate[3];
+  if (!VALID_PAN_TYPES.includes(fourthChar)) {
+    return null;
+  }
+
+  return candidate;
 };
 
 const looksLikePanWindow = (windowValue) => {
@@ -226,6 +250,11 @@ const applySharpen = (data, width, height) => {
 const createProcessedBuffer = (image, crop, variant) => {
   const sourceWidth = image.width;
   const sourceHeight = image.height;
+  
+  if (sourceWidth < 5 || sourceHeight < 5) {
+    return null; // Skip tiny/corrupted images
+  }
+
   const cropWidth = Math.round(sourceWidth * crop.widthRatio);
   const cropHeight = Math.round(sourceHeight * crop.heightRatio);
   const cropX = Math.max(
@@ -297,12 +326,18 @@ const runOcr = async (imageInput, config) => {
   return result.data.text || "";
 };
 
-const extractPanNumber = async (imagePath) => {
+const extractPanNumber = async (imagePath, expectedPan = null) => {
   if (!imagePath) {
     throw new Error("PAN image missing");
   }
 
+  console.log(`*****************************************`);
+  console.log(`OCR: INPUT IMAGE PATH: "${imagePath}"`);
+  console.log(`OCR: EXPECTED PAN: ${expectedPan || "NONE"}`);
+  
   const image = await loadImage(imagePath);
+  console.log(`OCR: LOADED IMAGE DATA: ${image.width}x${image.height}`);
+  console.log(`*****************************************`);
   const runPasses = async (crops) => {
     const candidateScores = new Map();
 
@@ -316,10 +351,15 @@ const extractPanNumber = async (imagePath) => {
 
           for (const candidate of candidates) {
             const key = candidate.value;
-            const score =
+            let score =
               (CROP_WEIGHTS[crop.name] || 0) +
               (OCR_WEIGHTS[config.name] || 0) +
               (SOURCE_WEIGHTS[candidate.source] || 0);
+
+            // Boost candidate if it matches the expected PAN
+            if (expectedPan && key.toUpperCase() === expectedPan.toUpperCase()) {
+              score += 50;
+            }
 
             const current = candidateScores.get(key) || {
               value: key,
@@ -333,8 +373,12 @@ const extractPanNumber = async (imagePath) => {
           }
 
           const bestCandidate = getBestCandidate(candidateScores);
-          if (bestCandidate && bestCandidate.score >= 20 && bestCandidate.hits >= 2) {
-            return bestCandidate.value;
+          // Early exit only if we have high confidence or a match with expected PAN
+          if (bestCandidate) {
+            const isExpectedMatch = expectedPan && bestCandidate.value.toUpperCase() === expectedPan.toUpperCase();
+            if (isExpectedMatch || (bestCandidate.score >= 30 && bestCandidate.hits >= 2)) {
+              return bestCandidate.value;
+            }
           }
         }
       }
@@ -343,26 +387,35 @@ const extractPanNumber = async (imagePath) => {
     return getBestCandidate(candidateScores)?.value || null;
   };
 
+  console.log(`OCR: Starting extractPanNumber. Expected: ${expectedPan || "NONE"}`);
+  const isMatch = (val) => expectedPan && val.toUpperCase() === expectedPan.toUpperCase();
+
   const focusedCrops = CROP_PASSES.filter((crop) => !crop.fallback);
   const focusedResult = await runPasses(focusedCrops);
-  if (focusedResult) {
+  if (focusedResult && (isMatch(focusedResult) || !isOpenAIVisionConfigured())) {
+    console.log(`OCR: Local focused pass result: ${focusedResult}`);
     return focusedResult;
   }
 
   const fallbackCrops = CROP_PASSES.filter((crop) => crop.fallback);
   const fallbackResult = await runPasses(fallbackCrops);
-  if (fallbackResult) {
+  if (fallbackResult && (isMatch(fallbackResult) || !isOpenAIVisionConfigured())) {
+    console.log(`OCR: Local fallback pass result: ${fallbackResult}`);
     return fallbackResult;
   }
+
+  console.log(`OCR: Local matches were uncertain or mismatched (${focusedResult || fallbackResult || "NONE"})... switching to OpenAI.`);
 
   if (isOpenAIVisionConfigured()) {
     try {
       const openAiPan = await extractPanNumberWithOpenAI(imagePath);
       if (openAiPan && PAN_REGEX.test(openAiPan)) {
+        console.log(`OCR: OpenAI extracted: ${openAiPan}`);
         return openAiPan;
       }
-    } catch {
-      // Ignore external OCR failures and surface null below.
+    } catch (err) {
+      console.error("OCR: OpenAI fallback failed:", err.message);
+      return null;
     }
   }
 

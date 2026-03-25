@@ -3,7 +3,8 @@ import Table from "../../../components/Table";
 import { FiShield, FiUserCheck } from "react-icons/fi";
 import { useSelector } from "react-redux";
 
-const Html = ({ data, pagination, onView, onUpdateStatus, onPageChange, onLimitChange }) => {
+const Html = ({ data, loading, pagination, onView, onUpdateStatus, onPageChange, onLimitChange }) => {
+
   const isDark = useSelector((state) => state.theme.mode === "dark");
 
   const columns = [
@@ -108,7 +109,9 @@ const Html = ({ data, pagination, onView, onUpdateStatus, onPageChange, onLimitC
     }`}>
       <Table
         data={data || []}
+        isLoading={loading}
         columns={columns}
+
         page={pagination?.currentPage || 1}
         count={pagination?.limit || 10}
         total={pagination?.totalUsers || 0}

@@ -3,13 +3,16 @@ const path = require("path");
 const {
   OPENAI_API_KEY,
   OPENAI_VISION_MODEL,
+  AZURE_OPENAI_API_KEY,
+  AZURE_OPENAI_ENDPOINT,
+  AZURE_OPENAI_DEPLOYMENT_NAME,
+  AZURE_OPENAI_API_VERSION,
 } = require("../config/env");
 
-const DEFAULT_MODEL = OPENAI_VISION_MODEL || "gpt-4.1-mini";
+const DEFAULT_MODEL = OPENAI_VISION_MODEL || "gpt-4-vision-preview";
 
 const getMimeType = (filePath) => {
   const ext = path.extname(filePath).toLowerCase();
-
   if (ext === ".png") return "image/png";
   if (ext === ".webp") return "image/webp";
   if (ext === ".gif") return "image/gif";
@@ -32,7 +35,6 @@ const stripJsonFences = (value) =>
 
 const parseJsonResponse = (text) => {
   const cleaned = stripJsonFences(text);
-
   try {
     return JSON.parse(cleaned);
   } catch {
@@ -40,15 +42,17 @@ const parseJsonResponse = (text) => {
     if (!match) {
       throw new Error("OpenAI response did not contain valid JSON");
     }
-
     return JSON.parse(match[0]);
   }
 };
 
-const isOpenAIVisionConfigured = () => Boolean(OPENAI_API_KEY);
+const isOpenAIVisionConfigured = () => Boolean(OPENAI_API_KEY || AZURE_OPENAI_API_KEY);
 
-const requestVisionJson = async ({ prompt, imagePaths, maxOutputTokens = 200 }) => {
-  if (!OPENAI_API_KEY) {
+const requestVisionJson = async ({ prompt, imagePaths, maxOutputTokens = 300 }) => {
+  const isAzure = Boolean(AZURE_OPENAI_API_KEY);
+  const isStandard = Boolean(OPENAI_API_KEY);
+
+  if (!isAzure && !isStandard) {
     const error = new Error("OpenAI vision is not configured");
     error.statusCode = 500;
     throw error;
@@ -56,34 +60,52 @@ const requestVisionJson = async ({ prompt, imagePaths, maxOutputTokens = 200 }) 
 
   const imageInputs = await Promise.all(
     imagePaths.map(async (imagePath) => ({
-      type: "input_image",
-      image_url: await toDataUrl(imagePath),
+      type: "image_url",
+      image_url: { url: await toDataUrl(imagePath) },
     }))
   );
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 45000);
+  const timeout = setTimeout(() => controller.abort(), 60000);
 
   try {
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: DEFAULT_MODEL,
-        input: [
+    let url;
+    let headers = { "Content-Type": "application/json" };
+    let body;
+
+    if (isAzure) {
+      const endpoint = AZURE_OPENAI_ENDPOINT.replace(/\/$/, "");
+      url = `${endpoint}/openai/deployments/${AZURE_OPENAI_DEPLOYMENT_NAME}/chat/completions?api-version=${AZURE_OPENAI_API_VERSION}`;
+      headers["api-key"] = AZURE_OPENAI_API_KEY;
+      body = {
+        messages: [
           {
             role: "user",
-            content: [
-              { type: "input_text", text: prompt },
-              ...imageInputs,
-            ],
+            content: [{ type: "text", text: prompt }, ...imageInputs],
           },
         ],
-        max_output_tokens: maxOutputTokens,
-      }),
+        max_completion_tokens: maxOutputTokens,
+      };
+    } else {
+      url = "https://api.openai.com/v1/chat/completions";
+      headers["Authorization"] = `Bearer ${OPENAI_API_KEY}`;
+      body = {
+        model: DEFAULT_MODEL,
+        messages: [
+          {
+            role: "user",
+            content: [{ type: "text", text: prompt }, ...imageInputs],
+          },
+        ],
+        max_tokens: maxOutputTokens,
+        temperature: 0.1,
+      };
+    }
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
       signal: controller.signal,
     });
 
@@ -91,13 +113,14 @@ const requestVisionJson = async ({ prompt, imagePaths, maxOutputTokens = 200 }) 
 
     if (!response.ok) {
       const error = new Error(
-        payload?.error?.message || "OpenAI vision request failed"
+        payload?.error?.message || `OpenAI request failed with status ${response.status}`
       );
       error.statusCode = response.status || 500;
       throw error;
     }
 
-    return parseJsonResponse(payload.output_text || "");
+    const outputText = payload.choices?.[0]?.message?.content || "";
+    return parseJsonResponse(outputText);
   } finally {
     clearTimeout(timeout);
   }

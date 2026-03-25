@@ -178,7 +178,9 @@ const KYCQueue = () => {
       }`}>
         <Table
           data={filteredQueue}
+          isLoading={loading}
           columns={columns}
+
           page={pagination.page}
           count={pagination.limit}
           total={searchTerm ? filteredQueue.length : pagination.total}

@@ -48,14 +48,45 @@ class KYCController {
 
   async submitKyc(req, res, next) {
     try {
-      const { panNumber, signature } = req.body;
+      const { fullName, panNumber, signature } = req.body;
       const uploadedPhoto = req.file ? req.file.path : null;
+
       if (!uploadedPhoto) {
         throw new Error("Uploaded photo is required");
       }
 
+      // PAN structure validation (4th & 5th char)
+      const sanitizedPan = panNumber.toUpperCase();
+      const fourthChar = sanitizedPan[3];
+      const fifthChar = sanitizedPan[4];
+
+      const VALID_TYPES = ["P", "C", "H", "A", "B", "G", "J", "L", "F", "T"];
+      if (!VALID_TYPES.includes(fourthChar)) {
+        throw new Error(`Invalid PAN type character: '${fourthChar}'. Suspicious card detected.`);
+      }
+
+      const nameParts = fullName.trim().split(/\s+/);
+      let expectedInitial = "";
+      
+      if (fourthChar === "P") {
+        // Individual: 5th char matches first letter of Surname (last word)
+        const surname = nameParts[nameParts.length - 1];
+        expectedInitial = surname ? surname[0].toUpperCase() : "";
+      } else {
+        // Company/Firm/etc: 5th char matches first letter of First Name
+        expectedInitial = nameParts[0] ? nameParts[0][0].toUpperCase() : "";
+      }
+
+      if (fifthChar !== expectedInitial) {
+        const errorMsg = fourthChar === "P" 
+          ? `PAN 5th character mismatch. For Individuals, it must match your Surname initial ('${expectedInitial}').` 
+          : `PAN 5th character mismatch. It must match your entity name initial ('${expectedInitial}').`;
+        throw new Error(errorMsg);
+      }
+
       const result = await kycService.submitKyc({
         userId: req.user.id,
+        fullName,
         panNumber,
         signature,
         uploadedPhoto,
@@ -95,6 +126,11 @@ class KYCController {
       const selfieImage = req.files?.selfieImage
         ? req.files.selfieImage[0].path
         : null;
+
+      console.log(`[Controller] VerifyKYC - PAN: ${panCardImage}, Selfie: ${selfieImage}`);
+      if (req.files?.panCardImage) {
+        console.log(`[Controller] PAN File Size: ${req.files.panCardImage[0].size} bytes`);
+      }
 
       if (!panCardImage || !selfieImage) {
         throw new Error("Required images missing");

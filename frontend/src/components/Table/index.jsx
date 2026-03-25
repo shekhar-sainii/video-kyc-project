@@ -13,6 +13,8 @@ import {
   ArrowUpIcon,
 } from "@heroicons/react/16/solid";
 import DragDrop from "./DragDrop";
+import BeautifulLoader from "../common/BeautifulLoader";
+
 
 /* ================= TABLE SKELETON ================= */
 const TableSkeleton = ({ rows = 10 }) => {
@@ -151,8 +153,13 @@ const Table = ({
 
   /* ================= LOADING ================= */
   if (isLoading) {
-    return <TableSkeleton rows={count} />;
+    return (
+      <div className="py-20 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-[2rem]">
+        <BeautifulLoader text="Accessing Enterprise Data..." fullScreen={false} />
+      </div>
+    );
   }
+
 
   /* ================= NO DATA ================= */
   if (!total || data.length === 0) {

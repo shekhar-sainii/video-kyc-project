@@ -1,0 +1,56 @@
+services:
+  - type: web
+    name: video-kyc-backend
+    runtime: node
+    plan: starter
+    region: oregon
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      # Runtime
+      - key: NODE_ENV
+        value: production
+      # Render will generally provide `PORT` automatically; set explicitly only if needed.
+      - key: PORT
+        value: "10000"
+
+      # URLs (used for email verification links + asset URLs)
+      - key: FRONTEND_URL
+        value: https://YOUR_VERCEL_DOMAIN
+      - key: BACKEND_URL
+        value: https://YOUR_RENDER_DOMAIN
+
+      # Database / auth
+      - key: MONGO_URI
+        value: MONGODB_URI_REPLACE_ME
+      - key: JWT_SECRET
+        value: JWT_SECRET_REPLACE_ME
+
+      # Google OAuth
+      - key: GOOGLE_CLIENT_ID
+        value: GOOGLE_CLIENT_ID_REPLACE_ME
+      - key: GOOGLE_CLIENT_SECRET
+        value: GOOGLE_CLIENT_SECRET_REPLACE_ME
+      - key: GOOGLE_CALLBACK_URL
+        value: https://YOUR_RENDER_DOMAIN/api/v1/auth/google/callback
+
+      # Email (nodemailer)
+      - key: EMAIL_USER
+        value: EMAIL_USER_REPLACE_ME
+      - key: EMAIL_PASS
+        value: EMAIL_PASS_REPLACE_ME
+
+      # Cloudinary (profile images)
+      - key: CLOUDINARY_CLOUD_NAME
+        value: CLOUDINARY_CLOUD_NAME_REPLACE_ME
+      - key: CLOUDINARY_API_KEY
+        value: CLOUDINARY_API_KEY_REPLACE_ME
+      - key: CLOUDINARY_API_SECRET
+        value: CLOUDINARY_API_SECRET_REPLACE_ME
+
+      # OpenAI vision (PAN + face matching)
+      - key: OPENAI_API_KEY
+        value: OPENAI_API_KEY_REPLACE_ME
+      - key: OPENAI_VISION_MODEL
+        value: gpt-4.1-mini

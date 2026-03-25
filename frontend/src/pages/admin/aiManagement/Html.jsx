@@ -1,5 +1,7 @@
 import React from "react";
 import { FiCpu, FiSettings, FiActivity, FiRefreshCw, FiZap } from "react-icons/fi";
+import BeautifulLoader from "../../common/BeautifulLoader";
+
 
 const Html = ({ data, loading, isDark, onToggleStatus }) => {
   return (
@@ -25,10 +27,11 @@ const Html = ({ data, loading, isDark, onToggleStatus }) => {
         isDark ? "bg-[#1a2b4b] border-slate-700" : "bg-white border-slate-100 shadow-sm"
       }`}>
         {loading ? (
-          <div className="p-20 text-center text-blue-500 font-bold animate-pulse text-xs tracking-widest">
-            INITIALIZING AI ENGINES...
+          <div className="py-20">
+            <BeautifulLoader text="INITIALIZING AI ENGINES..." fullScreen={false} />
           </div>
         ) : (
+
           <table className="w-full text-left text-sm border-collapse">
             <thead>
               <tr className={`border-b ${isDark ? "border-slate-700 bg-slate-800/40" : "bg-slate-50 border-slate-100"}`}>

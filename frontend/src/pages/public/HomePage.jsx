@@ -8,7 +8,7 @@ const Hero = () => {
   const navigate = useNavigate();
 
   return (
-    <section className="bg-gradient-to-br from-indigo-900 via-[#1e1b4b] to-[#312e81] text-white py-28 px-12 flex flex-col lg:flex-row items-center justify-between overflow-hidden relative">
+    <section className="bg-linear-to-br from-indigo-900 via-[#1e1b4b] to-[#312e81] text-white py-28 px-12 flex flex-col lg:flex-row items-center justify-between overflow-hidden relative">
       {/* Decorative Blur Orbs */}
       <div className="absolute -top-24 -left-24 w-96 h-96 bg-indigo-500/20 rounded-full blur-3xl opacity-50"></div>
       
@@ -34,7 +34,7 @@ const Hero = () => {
           <button
            onClick={() => navigate('/dashboard')}
            className="bg-white/5 hover:bg-white/10 border border-white/20 px-10 py-4 rounded-2xl font-bold text-lg backdrop-blur-md transition duration-200">
-            View API Docs
+            View KYC Docs
           </button>
         </div>
       </div>

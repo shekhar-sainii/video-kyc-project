@@ -3,27 +3,46 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { FiCamera, FiShield, FiMic, FiRefreshCw } from "react-icons/fi";
 import Swal from "sweetalert2";
+import * as faceapi from "@vladmandic/face-api";
 import kycService from "../../services/kycService";
 
 const VideoKYCSession = () => {
   const AUTO_FACE_STABLE_FRAMES = 3;
   const AUTO_PAN_STABLE_FRAMES = 4;
+  // Analysis interval in step 3 is ~250ms; keep blink window generous (~10s).
+  const AUTO_BLINK_WINDOW_FRAMES = 40;
+  // After face is 3/3 aligned, ignore brief bad frames (blink / detector jitter).
+  const SELFIE_MISALIGN_GRACE_FRAMES = 14;
+  // With a relatively slow analysis interval, require only one detected
+  // "eyes closed" sample frame to arm the blink.
+  const MIN_BLINK_CLOSED_FRAMES = 1;
 
   const { id } = useParams();
   const navigate = useNavigate();
   const isDark = useSelector((state) => state.theme.mode === "dark");
-  
+
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const capturedImagesRef = useRef({ pan: null, selfie: null });
   const startAttemptRef = useRef(0);
   const faceDetectorRef = useRef(null);
+  const modelsLoadErrorRef = useRef(null);
+  const frameSeqRef = useRef(0);
+  const earOpenRef = useRef(null);
+  const blinkClosedFramesRef = useRef(0);
+  const blinkArmedRef = useRef(false);
+  const lastBlinkSeqRef = useRef(-9999);
   const analysisIntervalRef = useRef(null);
   const captureLockRef = useRef(false);
   const switchInProgressRef = useRef(false);
   const availableVideoDevicesRef = useRef([]);
   const panStableFramesRef = useRef(0);
   const selfieStableFramesRef = useRef(0);
+  // When selfie alignment reaches the threshold, we arm a short time window
+  // in which the user must blink once to verify.
+  const blinkVerificationArmedSeqRef = useRef(null);
+  const selfieAlignedLatchedRef = useRef(false);
+  const selfieMisalignedStreakRef = useRef(0);
   const [step, setStep] = useState(1); // 1: Intro, 2: PAN, 3: Selfie, 4: Verifying
   const [cameraState, setCameraState] = useState({ status: "loading", message: "Starting camera..." });
   const [cameraFacingMode, setCameraFacingMode] = useState("user");
@@ -31,6 +50,10 @@ const VideoKYCSession = () => {
   const [activeDeviceId, setActiveDeviceId] = useState(null);
   const [guideState, setGuideState] = useState("neutral");
   const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [panStableCount, setPanStableCount] = useState(0);
+  const [selfieStableCount, setSelfieStableCount] = useState(0);
+  /** True once face held steady 3/3; stays true through short dropout (blink / detector jitter). */
+  const [selfieFaceReady, setSelfieFaceReady] = useState(false);
 
   const loadVideoDevices = async (preferredFacingMode = cameraFacingMode) => {
     if (!navigator.mediaDevices?.enumerateDevices) {
@@ -98,6 +121,28 @@ const VideoKYCSession = () => {
     };
   };
 
+  const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+  const dist = (p1, p2) => Math.hypot(p1.x - p2.x, p1.y - p2.y);
+
+  // Eye Aspect Ratio (EAR) - lower values mean eyes are more closed.
+  // Landmarks indices for 68-point model:
+  // - Left eye: 36-41
+  // - Right eye: 42-47
+  const getEyeEAR = (landmarks, eye) => {
+    const positions = landmarks.positions;
+    const p1 = positions[eye[0]];
+    const p2 = positions[eye[1]];
+    const p3 = positions[eye[2]];
+    const p4 = positions[eye[3]];
+    const p5 = positions[eye[4]];
+    const p6 = positions[eye[5]];
+
+    const vertical = dist(p2, p6) + dist(p3, p5);
+    const horizontal = 2 * dist(p1, p4);
+    return horizontal ? vertical / horizontal : 0;
+  };
+
   const getPanAssessment = (ctx, videoWidth, videoHeight) => {
     const guideWidth = Math.round(videoWidth * 0.66);
     const guideHeight = Math.round(videoHeight * 0.42);
@@ -120,25 +165,25 @@ const VideoKYCSession = () => {
 
     const limits = isMobileViewport
       ? {
-          brightnessMin: 38,
-          brightnessMax: 238,
-          varianceMin: 240,
-          edgeMin: 0.025,
-          edgeMax: 0.52,
-          bandVarianceMin: 140,
-          bandEdgeMin: 0.015,
-          bandEdgeMax: 0.45,
-        }
+        brightnessMin: 38,
+        brightnessMax: 238,
+        varianceMin: 240,
+        edgeMin: 0.025,
+        edgeMax: 0.52,
+        bandVarianceMin: 140,
+        bandEdgeMin: 0.015,
+        bandEdgeMax: 0.45,
+      }
       : {
-          brightnessMin: 45,
-          brightnessMax: 232,
-          varianceMin: 300,
-          edgeMin: 0.035,
-          edgeMax: 0.56,
-          bandVarianceMin: 170,
-          bandEdgeMin: 0.02,
-          bandEdgeMax: 0.48,
-        };
+        brightnessMin: 45,
+        brightnessMax: 232,
+        varianceMin: 300,
+        edgeMin: 0.035,
+        edgeMax: 0.56,
+        bandVarianceMin: 170,
+        bandEdgeMin: 0.02,
+        bandEdgeMax: 0.48,
+      };
 
     const checks = {
       brightness:
@@ -267,7 +312,7 @@ const VideoKYCSession = () => {
           },
           audio: false,
         });
-      } catch (constraintError) {
+      } catch {
         mediaStream = await navigator.mediaDevices.getUserMedia({
           video: {
             ...(preferredDeviceId ? { deviceId: { ideal: preferredDeviceId } } : { facingMode }),
@@ -307,9 +352,13 @@ const VideoKYCSession = () => {
       setCameraState({ status: "ready", message: "Camera connected." });
       panStableFramesRef.current = 0;
       selfieStableFramesRef.current = 0;
+      selfieAlignedLatchedRef.current = false;
+      selfieMisalignedStreakRef.current = 0;
       captureLockRef.current = false;
       switchInProgressRef.current = false;
       setGuideState("neutral");
+      blinkVerificationArmedSeqRef.current = null;
+      setSelfieFaceReady(false);
       await loadVideoDevices(facingMode);
     } catch (error) {
       if (error?.name === "NotReadableError" && retryCount < 2) {
@@ -380,12 +429,76 @@ const VideoKYCSession = () => {
   }, []);
 
   useEffect(() => {
-    if (typeof window !== "undefined" && "FaceDetector" in window) {
-      faceDetectorRef.current = new window.FaceDetector({
-        fastMode: true,
-        maxDetectedFaces: 1,
-      });
-    }
+    let cancelled = false;
+    modelsLoadErrorRef.current = null;
+
+    const loadFaceApi = async () => {
+      try {
+        // Face models in: `frontend/public/models/*`
+        // Depending on how the SPA is mounted (dev vs preview vs ngrok path),
+        // an absolute `/models` can fail even if relative model requests work.
+        // Try a few safe base URL candidates until one succeeds.
+        const viteBase = import.meta?.env?.BASE_URL ?? "/";
+        const candidates = [
+          "/models",
+          `${viteBase}models`,
+          "./models",
+          "models",
+          `${window.location.origin}/models`,
+        ];
+
+        let lastErr = null;
+        for (const baseUrl of candidates) {
+          try {
+            // face-api.js v0.22+ uses `faceLandmark68Net` (and `faceLandmark68TinyNet`),
+            // while older versions used `faceLandmark68`.
+            // Load whichever landmark net exists in this runtime.
+            const landmarkNet =
+              faceapi.nets.faceLandmark68Net ||
+              faceapi.nets.faceLandmark68TinyNet ||
+              faceapi.nets.faceLandmark68;
+            if (!landmarkNet?.loadFromUri) {
+              throw new Error(
+                "face-api landmark model net not available (expected faceLandmark68Net / faceLandmark68TinyNet)."
+              );
+            }
+
+            if (!faceapi.nets.tinyFaceDetector?.loadFromUri) {
+              throw new Error("face-api tinyFaceDetector model net not available.");
+            }
+
+            await Promise.all([
+              faceapi.nets.tinyFaceDetector.loadFromUri(baseUrl),
+              landmarkNet.loadFromUri(baseUrl),
+            ]);
+            if (cancelled) return;
+            faceDetectorRef.current = { ready: true };
+            console.log("Face-api models loaded successfully");
+            return;
+          } catch (err) {
+            lastErr = err;
+          }
+        }
+
+        if (cancelled) return;
+        modelsLoadErrorRef.current = lastErr;
+        // Keep the full error for debugging.
+        // eslint-disable-next-line no-console
+        console.error("Face-api model load failed:", lastErr);
+        faceDetectorRef.current = { ready: false };
+      } catch (err) {
+        if (cancelled) return;
+        modelsLoadErrorRef.current = err;
+        // eslint-disable-next-line no-console
+        console.error("Face-api model load failed:", err);
+        faceDetectorRef.current = { ready: false };
+      }
+    };
+
+    void loadFaceApi();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -429,19 +542,21 @@ const VideoKYCSession = () => {
       ctx.drawImage(videoRef.current, 0, 0, videoWidth, videoHeight);
 
       if (step === 2) {
-        const panWarmupThreshold = Math.max(1, AUTO_PAN_STABLE_FRAMES - 2);
         const panAssessment = getPanAssessment(ctx, videoWidth, videoHeight);
 
         if (panAssessment.stable) {
           panStableFramesRef.current += 1;
-          setGuideState(panStableFramesRef.current >= panWarmupThreshold ? "valid" : "neutral");
-          setAutoStatus(`PAN detected, hold steady... ${panStableFramesRef.current}/${AUTO_PAN_STABLE_FRAMES}`);
+          setPanStableCount(Math.min(AUTO_PAN_STABLE_FRAMES, panStableFramesRef.current));
+          setGuideState(panStableFramesRef.current >= AUTO_PAN_STABLE_FRAMES ? "valid" : "neutral");
+          setAutoStatus("PAN detected, hold steady...");
         } else if (panAssessment.almostStable) {
           panStableFramesRef.current = 0;
+          setPanStableCount(0);
           setGuideState("neutral");
           setAutoStatus("PAN almost aligned. Hold it flatter and a little closer.");
         } else {
           panStableFramesRef.current = 0;
+          setPanStableCount(0);
           setGuideState("invalid");
           setAutoStatus(panAssessment.message);
         }
@@ -455,25 +570,74 @@ const VideoKYCSession = () => {
         return;
       }
 
-      if (!faceDetectorRef.current) {
+      const faceApiState = faceDetectorRef.current;
+      if (!faceApiState?.ready) {
         setGuideState("neutral");
-        setAutoStatus("Face auto-detect needs a newer browser. Use manual capture if needed.");
+        const err = modelsLoadErrorRef.current;
+        const errMsg = err?.message ? String(err.message) : err ? String(err) : "";
+        const shortErrMsg = errMsg.length > 120 ? `${errMsg.slice(0, 120)}...` : errMsg;
+        setAutoStatus(err ? `Face detection models failed to load: ${shortErrMsg || "unknown error"}` : "Loading face detection models...");
         return;
       }
 
       try {
-        const faces = await faceDetectorRef.current.detect(canvas);
-        if (!faces?.length) {
+        const inputSize = isMobileViewport ? 224 : 320;
+        const options = new faceapi.TinyFaceDetectorOptions({
+          inputSize,
+          scoreThreshold: 0.4,
+        });
+
+        frameSeqRef.current += 1;
+        const currentSeq = frameSeqRef.current;
+
+        const detection = await faceapi
+          .detectSingleFace(canvas, options)
+          .withFaceLandmarks();
+
+        if (!detection) {
+          if (selfieAlignedLatchedRef.current) {
+            selfieMisalignedStreakRef.current += 1;
+            if (selfieMisalignedStreakRef.current <= SELFIE_MISALIGN_GRACE_FRAMES) {
+              selfieStableFramesRef.current = AUTO_FACE_STABLE_FRAMES;
+              setSelfieStableCount(AUTO_FACE_STABLE_FRAMES);
+              setGuideState("neutral");
+              setAutoStatus("Blink once to verify — hold steady if capture is slow.");
+              const faceAlignedGrace =
+                selfieAlignedLatchedRef.current ||
+                selfieStableFramesRef.current >= AUTO_FACE_STABLE_FRAMES;
+              const blinkSeqGrace = lastBlinkSeqRef.current;
+              const blinkVerifiedGrace =
+                blinkVerificationArmedSeqRef.current != null &&
+                blinkSeqGrace >= blinkVerificationArmedSeqRef.current &&
+                blinkSeqGrace - blinkVerificationArmedSeqRef.current <= AUTO_BLINK_WINDOW_FRAMES;
+              if (faceAlignedGrace && blinkVerifiedGrace) {
+                captureLockRef.current = true;
+                setGuideState("valid");
+                setAutoStatus("Selfie captured successfully.");
+                captureFrame("selfie");
+              }
+              return;
+            }
+          }
+          selfieAlignedLatchedRef.current = false;
+          selfieMisalignedStreakRef.current = 0;
           selfieStableFramesRef.current = 0;
+          setSelfieStableCount(0);
+          setSelfieFaceReady(false);
           setGuideState("invalid");
           setAutoStatus("Look into the camera and keep your face inside the guide.");
+          blinkClosedFramesRef.current = 0;
+          blinkArmedRef.current = false;
+          blinkVerificationArmedSeqRef.current = null;
+          lastBlinkSeqRef.current = -9999;
           return;
         }
 
-        const face = faces[0].boundingBox;
-        const centerX = face.x + (face.width / 2);
-        const centerY = face.y + (face.height / 2);
-        const normalizedCenterX = centerX / videoWidth;
+        const face = detection.detection.box;
+        const centerX = face.x + face.width / 2;
+        const centerY = face.y + face.height / 2;
+        const displayCenterX = cameraFacingMode === "user" ? videoWidth - centerX : centerX;
+        const normalizedCenterX = displayCenterX / videoWidth;
         const normalizedCenterY = centerY / videoHeight;
         const normalizedFaceWidth = face.width / videoWidth;
         const normalizedFaceHeight = face.height / videoHeight;
@@ -485,8 +649,6 @@ const VideoKYCSession = () => {
           Math.min(Math.floor(face.width), videoWidth - Math.max(Math.floor(face.x), 0)),
           Math.min(Math.floor(face.height), videoHeight - Math.max(Math.floor(face.y), 0))
         );
-        const faceWarmupThreshold = Math.max(1, AUTO_FACE_STABLE_FRAMES - 1);
-
         const selfieLooksStable =
           normalizedCenterX > (isMobileViewport ? 0.3 : 0.36) &&
           normalizedCenterX < (isMobileViewport ? 0.7 : 0.64) &&
@@ -500,34 +662,143 @@ const VideoKYCSession = () => {
           faceMetrics.meanBrightness < (isMobileViewport ? 225 : 210) &&
           faceMetrics.variance > (isMobileViewport ? 120 : 180);
 
-        if (selfieLooksStable) {
-          selfieStableFramesRef.current += 1;
-          setGuideState(selfieStableFramesRef.current >= faceWarmupThreshold ? "valid" : "neutral");
-          setAutoStatus(`Face aligned, auto-capturing... ${selfieStableFramesRef.current}/${AUTO_FACE_STABLE_FRAMES}`);
-        } else {
-          selfieStableFramesRef.current = 0;
-          setGuideState("invalid");
-          setAutoStatus("Center your face and improve lighting for auto-capture.");
+        // Blink detection (landmarks-based).
+        if (detection.landmarks) {
+          const leftEAR = getEyeEAR(detection.landmarks, [36, 37, 38, 39, 40, 41]);
+          const rightEAR = getEyeEAR(detection.landmarks, [42, 43, 44, 45, 46, 47]);
+          const ear = (leftEAR + rightEAR) / 2;
+
+          // Use a learned open-eye baseline; if we don't have it yet, don't
+          // classify eyes-closed this frame.
+          const openBaseline = earOpenRef.current;
+          // Even more generous threshold (0.75 instead of 0.68)
+          const closedThreshold = openBaseline == null ? null : clamp(openBaseline * 0.75, 0.1, 0.35);
+
+          const eyesClosed = closedThreshold == null ? false : ear < closedThreshold;
+          if (eyesClosed) {
+            blinkClosedFramesRef.current += 1;
+            if (blinkClosedFramesRef.current >= MIN_BLINK_CLOSED_FRAMES) {
+              blinkArmedRef.current = true;
+            }
+          } else {
+            if (blinkArmedRef.current && blinkClosedFramesRef.current >= MIN_BLINK_CLOSED_FRAMES) {
+              // Timestamp on first "eyes opened" sample after the blink.
+              // This makes the captured selfie more likely to have eyes open.
+              lastBlinkSeqRef.current = currentSeq;
+            }
+            blinkClosedFramesRef.current = 0;
+            blinkArmedRef.current = false;
+
+            // Update open-eye baseline only when eyes look open.
+            if (ear > 0.12) {
+              earOpenRef.current = earOpenRef.current == null ? ear : (0.9 * earOpenRef.current + 0.1 * ear);
+            }
+          }
+          // Log EAR for debugging
+          console.log(`EAR: ${ear.toFixed(3)}, Threshold: ${closedThreshold?.toFixed(3)}, Baseline: ${openBaseline?.toFixed(3)}`);
         }
 
-        if (selfieStableFramesRef.current >= AUTO_FACE_STABLE_FRAMES) {
+        if (selfieLooksStable) {
+          selfieMisalignedStreakRef.current = 0;
+          selfieStableFramesRef.current += 1;
+          setSelfieStableCount(Math.min(AUTO_FACE_STABLE_FRAMES, selfieStableFramesRef.current));
+          const faceAlignedNow = selfieStableFramesRef.current >= AUTO_FACE_STABLE_FRAMES;
+
+          if (faceAlignedNow) {
+            selfieAlignedLatchedRef.current = true;
+            setSelfieFaceReady(true);
+            if (blinkVerificationArmedSeqRef.current == null) {
+              // Arm the verification window when alignment reaches 3/3.
+              blinkVerificationArmedSeqRef.current = currentSeq;
+            }
+
+            const blinkSeq = lastBlinkSeqRef.current;
+            const blinkVerified =
+              blinkSeq >= blinkVerificationArmedSeqRef.current &&
+              blinkSeq - blinkVerificationArmedSeqRef.current <= AUTO_BLINK_WINDOW_FRAMES;
+
+            if (blinkVerified) {
+              setGuideState("valid");
+              setAutoStatus("Blink verified. Capturing selfie...");
+            } else {
+              setGuideState("neutral");
+              setAutoStatus("Face aligned. Please blink once to verify.");
+            }
+          } else {
+            setGuideState("neutral");
+            setAutoStatus("Face aligned, hold steady...");
+          }
+        } else if (selfieAlignedLatchedRef.current) {
+          selfieMisalignedStreakRef.current += 1;
+          if (selfieMisalignedStreakRef.current <= SELFIE_MISALIGN_GRACE_FRAMES) {
+            selfieStableFramesRef.current = AUTO_FACE_STABLE_FRAMES;
+            setSelfieStableCount(AUTO_FACE_STABLE_FRAMES);
+            const blinkSeq = lastBlinkSeqRef.current;
+            const blinkVerified =
+              blinkVerificationArmedSeqRef.current != null &&
+              blinkSeq >= blinkVerificationArmedSeqRef.current &&
+              blinkSeq - blinkVerificationArmedSeqRef.current <= AUTO_BLINK_WINDOW_FRAMES;
+            if (blinkVerified) {
+              setGuideState("valid");
+              setAutoStatus("Blink verified. Capturing selfie...");
+            } else {
+              setGuideState("neutral");
+              setAutoStatus("Face aligned. Please blink once to verify.");
+            }
+          } else {
+            selfieAlignedLatchedRef.current = false;
+            selfieMisalignedStreakRef.current = 0;
+            selfieStableFramesRef.current = 0;
+            setSelfieStableCount(0);
+            setSelfieFaceReady(false);
+            setGuideState("invalid");
+            setAutoStatus("Center your face and improve lighting for auto-capture.");
+            blinkVerificationArmedSeqRef.current = null;
+            lastBlinkSeqRef.current = -9999;
+          }
+        } else {
+          selfieStableFramesRef.current = 0;
+          setSelfieStableCount(0);
+          setSelfieFaceReady(false);
+          setGuideState("invalid");
+          setAutoStatus("Center your face and improve lighting for auto-capture.");
+          blinkVerificationArmedSeqRef.current = null;
+          lastBlinkSeqRef.current = -9999;
+        }
+
+        const faceAlignedNow =
+          selfieAlignedLatchedRef.current || selfieStableFramesRef.current >= AUTO_FACE_STABLE_FRAMES;
+        const blinkSeq = lastBlinkSeqRef.current;
+        const blinkVerified =
+          blinkVerificationArmedSeqRef.current != null &&
+          blinkSeq >= blinkVerificationArmedSeqRef.current &&
+          blinkSeq - blinkVerificationArmedSeqRef.current <= AUTO_BLINK_WINDOW_FRAMES;
+
+        if (faceAlignedNow && blinkVerified) {
           captureLockRef.current = true;
           setGuideState("valid");
           setAutoStatus("Selfie captured successfully.");
           captureFrame("selfie");
         }
-      } catch {
+      } catch (err) {
+        console.error("Face detection error:", err);
         setGuideState("neutral");
         setAutoStatus("Face detection unavailable right now. Use manual capture if needed.");
       }
     };
 
+    const intervalMs = step === 3 ? 110 : 650;
+    let analysisRunning = false;
     analysisIntervalRef.current = setInterval(() => {
-      void analyzeFrame();
-    }, 700);
+      if (analysisRunning) return;
+      analysisRunning = true;
+      void analyzeFrame().finally(() => {
+        analysisRunning = false;
+      });
+    }, intervalMs);
 
     return () => clearAnalysisLoop();
-  }, [cameraState.status, step, isMobileViewport]);
+  }, [cameraState.status, step, isMobileViewport, cameraFacingMode]);
 
   // --- 4. IMAGE CAPTURE ---
   const getOptimizedCaptureDataUrl = (type) => {
@@ -577,6 +848,16 @@ const VideoKYCSession = () => {
     capturedImagesRef.current = updated;
     panStableFramesRef.current = 0;
     selfieStableFramesRef.current = 0;
+    selfieAlignedLatchedRef.current = false;
+    selfieMisalignedStreakRef.current = 0;
+    earOpenRef.current = null;
+    blinkClosedFramesRef.current = 0;
+    blinkArmedRef.current = false;
+    lastBlinkSeqRef.current = -9999;
+    blinkVerificationArmedSeqRef.current = null;
+    setPanStableCount(0);
+    setSelfieStableCount(0);
+    setSelfieFaceReady(false);
     setGuideState("valid");
 
     if (type === "pan") {
@@ -627,7 +908,7 @@ const VideoKYCSession = () => {
       } else {
         const reason = verificationMessage || (
           !faceMatch && !panMatch ? "Face mismatch and PAN mismatch" :
-          !faceMatch ? "Face mismatch" : "PAN mismatch"
+            !faceMatch ? "Face mismatch" : "PAN mismatch"
         );
         Swal.fire({
           icon: "error",
@@ -648,21 +929,21 @@ const VideoKYCSession = () => {
   const guideTone =
     guideState === "valid"
       ? {
-          ring: "border-emerald-400/80 shadow-[0_0_40px_rgba(52,211,153,0.35)]",
-          panel: "text-emerald-300 bg-emerald-500/15 border-emerald-400/30",
-          label: "ALIGNED",
-        }
+        ring: "border-emerald-400/80 shadow-[0_0_40px_rgba(52,211,153,0.35)]",
+        panel: "text-emerald-300 bg-emerald-500/15 border-emerald-400/30",
+        label: "ALIGNED",
+      }
       : guideState === "invalid"
         ? {
-            ring: "border-red-400/80 shadow-[0_0_40px_rgba(248,113,113,0.30)]",
-            panel: "text-red-300 bg-red-500/15 border-red-400/30",
-            label: "ADJUST",
-          }
+          ring: "border-red-400/80 shadow-[0_0_40px_rgba(248,113,113,0.30)]",
+          panel: "text-red-300 bg-red-500/15 border-red-400/30",
+          label: "ADJUST",
+        }
         : {
-            ring: "border-indigo-400/60 shadow-[0_0_35px_rgba(99,102,241,0.25)]",
-            panel: "text-indigo-200 bg-indigo-500/15 border-indigo-400/30",
-            label: "SCANNING",
-          };
+          ring: "border-indigo-400/60 shadow-[0_0_35px_rgba(99,102,241,0.25)]",
+          panel: "text-indigo-200 bg-indigo-500/15 border-indigo-400/30",
+          label: "SCANNING",
+        };
 
   return (
     <div className={`min-h-screen flex flex-col transition-colors duration-300 ${isDark ? "bg-[#0f172a]" : "bg-[#f4f7fe]"}`}>
@@ -671,11 +952,11 @@ const VideoKYCSession = () => {
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-lg sm:h-11 sm:w-11">
-                <FiShield size={20} />
+              <FiShield size={20} />
             </div>
             <div className="min-w-0">
-                <h2 className={`text-sm font-black uppercase tracking-[0.22em] sm:text-base ${isDark ? "text-white" : "text-slate-900"}`}>Secure Session</h2>
-                <p className="truncate text-[10px] font-bold uppercase tracking-widest text-indigo-500 sm:text-[11px]">ID: {id}</p>
+              <h2 className={`text-sm font-black uppercase tracking-[0.22em] sm:text-base ${isDark ? "text-white" : "text-slate-900"}`}>Secure Session</h2>
+              <p className="truncate text-[10px] font-bold uppercase tracking-widest text-indigo-500 sm:text-[11px]">ID: {id}</p>
             </div>
           </div>
           <div className="flex items-center gap-2 self-start rounded-full px-3 py-1.5 sm:self-auto">
@@ -688,149 +969,179 @@ const VideoKYCSession = () => {
       {/* Main Video Viewport */}
       <div className="relative flex flex-1 items-center justify-center px-3 py-4 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
         <div className="relative w-full max-w-6xl overflow-hidden rounded-[1.5rem] border-2 border-indigo-600/20 bg-black shadow-2xl sm:rounded-[2rem] lg:rounded-[2.5rem] lg:border-4">
-            <div className="aspect-[3/4] sm:aspect-video">
-            <video 
-                ref={videoRef} 
-                autoPlay 
-                playsInline 
-                muted 
-                className={`h-full w-full object-cover ${cameraFacingMode === "user" ? "scale-x-[-1]" : ""}`} 
+          <div className="aspect-[3/4] sm:aspect-video">
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className={`h-full w-full object-cover ${cameraFacingMode === "user" ? "scale-x-[-1]" : ""}`}
             />
-            </div>
-            
-            {/* HUD Overlays */}
-            <div className="pointer-events-none absolute inset-0 flex flex-col justify-between p-3 sm:p-5 lg:p-8">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="w-fit max-w-[75%] rounded-2xl border border-white/20 bg-black/40 p-3 backdrop-blur-md sm:max-w-none sm:p-4">
-                        <p className="mb-1 text-[9px] font-bold uppercase text-white/60 sm:text-[10px]">Session Status</p>
-                        <p className={`flex items-center gap-2 text-[11px] font-black sm:text-xs ${
-                          cameraState.status === "ready"
-                            ? "text-green-400"
-                            : cameraState.status === "error"
-                              ? "text-red-400"
-                              : "text-amber-300"
-                        }`}>
-                            <FiMic className={cameraState.status === "loading" ? "animate-pulse" : "animate-bounce"} />
-                            {cameraState.status === "ready"
-                              ? "CAMERA_STREAM: OK"
-                              : cameraState.status === "error"
-                                ? "CAMERA_STREAM: BLOCKED"
-                                : "CAMERA_STREAM: SWITCHING"}
-                        </p>
-                    </div>
-                    <div className="flex gap-2 self-start">
-                        <button
-                          type="button"
-                          onClick={() => void switchCamera()}
-                          disabled={cameraState.status === "loading"}
-                          className={`pointer-events-auto flex items-center gap-2 rounded-xl border border-white/20 px-3 py-2 text-[9px] font-black uppercase tracking-[0.18em] text-white shadow-lg backdrop-blur-md transition sm:px-4 sm:text-[10px] ${
-                            cameraState.status === "loading"
-                              ? "cursor-not-allowed bg-black/25 text-white/60"
-                              : "bg-black/45 hover:bg-black/60"
-                          }`}
-                        >
-                          <FiRefreshCw />
-                          {cameraFacingMode === "user" ? "Front Cam" : "Back Cam"}
-                        </button>
-                        <div className="self-start rounded-xl bg-indigo-600 px-3 py-2 text-[9px] font-black uppercase tracking-[0.22em] text-white shadow-lg sm:px-4 sm:text-[10px]">
-                            AI GUIDED
-                        </div>
-                    </div>
-                </div>
+          </div>
 
-                {/* Instruction Card */}
-                <div className="mb-2 flex justify-center sm:mb-4">
-                    <div className="w-full max-w-md rounded-[1.75rem] border border-indigo-500/30 bg-black/60 p-4 text-center shadow-2xl backdrop-blur-xl sm:p-5 lg:p-6">
-                        <p className="mb-2 text-[9px] font-black uppercase tracking-[0.2em] text-indigo-400 sm:text-[10px]">Instructions</p>
-                        <h3 className="text-base font-bold leading-tight text-white sm:text-lg lg:text-xl">
-                            {step === 1 && (
-                              cameraState.status === "error"
-                                ? cameraState.message
-                                : cameraState.status === "loading"
-                                  ? cameraState.message
-                                  : "Welcome! Ready to begin?"
-                            )}
-                            {step === 2 && "Hold your PAN Card within the frame."}
-                            {step === 3 && "Smile! Align your face for a selfie."}
-                            {step === 4 && "Analyzing Identity Data..."}
-                        </h3>
-                        {cameraState.status === "loading" && step >= 2 && step <= 3 && (
-                          <p className="mt-3 text-xs text-white/70">{cameraState.message}</p>
-                        )}
-                        {cameraState.status === "ready" && step >= 2 && step <= 3 && (
-                          <div className="mt-3 flex flex-col items-center gap-2">
-                            <span className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] ${guideTone.panel}`}>
-                              {guideTone.label}
-                            </span>
-                            <p className="text-xs text-white/75">{autoStatus}</p>
-                          </div>
-                        )}
-                        {cameraState.status === "loading" && step === 1 && (
-                          <p className="mt-3 text-xs text-white/70">Starting mobile camera preview...</p>
-                        )}
-                        {cameraState.status === "error" && (
-                          <button
-                            type="button"
-                            onClick={() => void startVideo()}
-                            className="pointer-events-auto mt-4 rounded-xl bg-white px-4 py-2 text-[11px] font-black uppercase tracking-widest text-slate-900 transition hover:bg-slate-100"
-                          >
-                            Retry Camera
-                          </button>
-                        )}
-                    </div>
+          {/* HUD Overlays */}
+          <div className="pointer-events-none absolute inset-0 flex flex-col justify-between p-3 sm:p-5 lg:p-8">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="w-fit max-w-[75%] rounded-2xl border border-white/20 bg-black/40 p-3 backdrop-blur-md sm:max-w-none sm:p-4">
+                <p className="mb-1 text-[9px] font-bold uppercase text-white/60 sm:text-[10px]">Session Status</p>
+                <p className={`flex items-center gap-2 text-[11px] font-black sm:text-xs ${cameraState.status === "ready"
+                  ? "text-green-400"
+                  : cameraState.status === "error"
+                    ? "text-red-400"
+                    : "text-amber-300"
+                  }`}>
+                  <FiMic className={cameraState.status === "loading" ? "animate-pulse" : "animate-bounce"} />
+                  {cameraState.status === "ready"
+                    ? "CAMERA_STREAM: OK"
+                    : cameraState.status === "error"
+                      ? "CAMERA_STREAM: BLOCKED"
+                      : "CAMERA_STREAM: SWITCHING"}
+                </p>
+              </div>
+              <div className="flex gap-2 self-start">
+                <button
+                  type="button"
+                  onClick={() => void switchCamera()}
+                  disabled={cameraState.status === "loading"}
+                  className={`pointer-events-auto flex items-center gap-2 rounded-xl border border-white/20 px-3 py-2 text-[9px] font-black uppercase tracking-[0.18em] text-white shadow-lg backdrop-blur-md transition sm:px-4 sm:text-[10px] ${cameraState.status === "loading"
+                    ? "cursor-not-allowed bg-black/25 text-white/60"
+                    : "bg-black/45 hover:bg-black/60"
+                    }`}
+                >
+                  <FiRefreshCw />
+                  {cameraFacingMode === "user" ? "Front Cam" : "Back Cam"}
+                </button>
+                <div className="self-start rounded-xl bg-indigo-600 px-3 py-2 text-[9px] font-black uppercase tracking-[0.22em] text-white shadow-lg sm:px-4 sm:text-[10px]">
+                  AI GUIDED
                 </div>
+              </div>
             </div>
 
-            {/* Scanning Frame for PAN/Face */}
-            {(step === 2 || step === 3) && (
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <div className={`border-4 border-dashed animate-pulse transition-all duration-300 ${guideTone.ring} ${
-                        step === 2
-                          ? "h-[30%] w-[82%] rounded-3xl sm:h-1/2 sm:w-2/3"
-                          : "w-[45%] aspect-square rounded-full sm:w-1/3"
-                    }`}></div>
-                </div>
-            )}
+            {/* Instruction Card */}
+            <div className="mb-2 flex justify-center sm:mb-4">
+              <div className="w-full max-w-md rounded-[1.75rem] border border-indigo-500/30 bg-black/60 p-4 text-center shadow-2xl backdrop-blur-xl sm:p-5 lg:p-6">
+                <p className="mb-2 text-[9px] font-black uppercase tracking-[0.2em] text-indigo-400 sm:text-[10px]">Instructions</p>
+                <h3 className="text-base font-bold leading-tight text-white sm:text-lg lg:text-xl">
+                  {step === 1 && (
+                    cameraState.status === "error"
+                      ? cameraState.message
+                      : cameraState.status === "loading"
+                        ? cameraState.message
+                        : "Welcome! Ready to begin?"
+                  )}
+                  {step === 2 && "Hold your PAN Card within the frame."}
+                  {step === 3 && "Smile! Align your face for a selfie."}
+                  {step === 4 && "Analyzing Identity Data..."}
+                </h3>
+                {cameraState.status === "loading" && step >= 2 && step <= 3 && (
+                  <p className="mt-3 text-xs text-white/70">{cameraState.message}</p>
+                )}
+                {cameraState.status === "ready" && step >= 2 && step <= 3 && (
+                  <div className="mt-3 flex flex-col items-center gap-2">
+                    <span className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] ${guideTone.panel}`}>
+                      {guideTone.label}
+                    </span>
+                    <p className="text-xs text-white/70">
+                      {step === 2
+                        ? `PAN frames: ${panStableCount}/${AUTO_PAN_STABLE_FRAMES}`
+                        : `Face frames: ${selfieStableCount}/${AUTO_FACE_STABLE_FRAMES}`}
+                    </p>
+                    <p className="text-xs text-white/75">{autoStatus}</p>
+                  </div>
+                )}
+                {cameraState.status === "loading" && step === 1 && (
+                  <p className="mt-3 text-xs text-white/70">Starting mobile camera preview...</p>
+                )}
+                {cameraState.status === "error" && (
+                  <button
+                    type="button"
+                    onClick={() => void startVideo()}
+                    className="pointer-events-auto mt-4 rounded-xl bg-white px-4 py-2 text-[11px] font-black uppercase tracking-widest text-slate-900 transition hover:bg-slate-100"
+                  >
+                    Retry Camera
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Scanning Frame for PAN/Face */}
+          {(step === 2 || step === 3) && (
+            <div className={`absolute inset-0 flex items-center justify-center pointer-events-none`}>
+              <div className={`border-4 border-dashed animate-pulse transition-all duration-300 ${guideTone.ring} ${step === 2
+                  ? "h-[30%] w-[70%] rounded-3xl sm:h-1/2 sm:w-[58%]"
+                  : isMobileViewport
+                    ? "h-[50%] w-[65%] rounded-[100%]"
+                    : "h-[62%] w-[26%] rounded-[100%]"
+                }`}></div>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Control Footer */}
       <div className={`border-t px-4 py-4 sm:px-6 sm:py-5 lg:px-8 ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
         <div className="mx-auto flex w-full max-w-7xl flex-col items-center justify-center gap-3 sm:flex-row">
-        {step < 4 && (
-            <button 
-                disabled={cameraState.status !== "ready"}
-                onClick={() => step === 1 ? guideUser(2) : captureFrame(step === 2 ? 'pan' : 'selfie')}
-                className={`flex w-full max-w-sm items-center justify-center gap-3 rounded-2xl px-6 py-4 text-center text-[11px] font-black uppercase tracking-widest shadow-xl transition-all sm:w-auto sm:px-10 sm:text-xs lg:px-12 ${
-                  cameraState.status === "ready"
-                    ? "bg-indigo-600 text-white shadow-indigo-600/30 active:scale-95 hover:bg-indigo-700"
-                    : "cursor-not-allowed bg-slate-400 text-white/80 shadow-none"
+          {step === 1 && (
+            <button
+              disabled={cameraState.status !== "ready"}
+              onClick={() => guideUser(2)}
+              className={`flex w-full max-w-sm items-center justify-center gap-3 rounded-2xl px-6 py-4 text-center text-[11px] font-black uppercase tracking-widest shadow-xl transition-all sm:w-auto sm:px-10 sm:text-xs lg:px-12 ${cameraState.status === "ready"
+                ? "bg-indigo-600 text-white shadow-indigo-600/30 active:scale-95 hover:bg-indigo-700"
+                : "cursor-not-allowed bg-slate-400 text-white/80 shadow-none"
                 }`}
             >
-                {step === 1 ? "I'm Ready" : step === 2 ? <><FiCamera /> Capture PAN</> : <><FiCamera /> Take Selfie</>}
+              I'm Ready
             </button>
-        )}
+          )}
 
-        <button
+          {step === 2 && (
+            <button
+              type="button"
+              disabled={cameraState.status !== "ready" || guideState !== "valid"}
+              onClick={() => captureFrame("pan")}
+              className={`flex w-full max-w-sm items-center justify-center gap-3 rounded-2xl px-6 py-4 text-center text-[11px] font-black uppercase tracking-widest shadow-xl transition-all sm:w-auto sm:px-10 sm:text-xs ${cameraState.status === "ready" && guideState === "valid"
+                ? "bg-emerald-600 text-white shadow-emerald-600/30 active:scale-95 hover:bg-emerald-700"
+                : "cursor-not-allowed bg-slate-400 text-white/80 shadow-none"
+                }`}
+            >
+              <FiCamera /> Capture PAN
+            </button>
+          )}
+
+          {step === 3 && (
+            <button
+              type="button"
+              disabled={cameraState.status !== "ready" || !selfieFaceReady}
+              onClick={() => captureFrame("selfie")}
+              className={`flex w-full max-w-sm items-center justify-center gap-3 rounded-2xl px-6 py-4 text-center text-[11px] font-black uppercase tracking-widest shadow-xl transition-all sm:w-auto sm:px-10 sm:text-xs ${cameraState.status === "ready" && selfieFaceReady
+                ? "bg-indigo-600 text-white shadow-indigo-600/30 active:scale-95 hover:bg-indigo-700"
+                : "cursor-not-allowed bg-slate-400 text-white/80 shadow-none"
+                }`}
+            >
+              <FiCamera /> Capture Face
+            </button>
+          )}
+
+          <button
             type="button"
             onClick={() => void switchCamera()}
             disabled={cameraState.status === "loading"}
-            className={`flex w-full max-w-sm items-center justify-center gap-3 rounded-2xl border border-indigo-500/20 px-6 py-4 text-center text-[11px] font-black uppercase tracking-widest transition sm:w-auto sm:px-8 sm:text-xs ${
-              cameraState.status === "loading"
-                ? "cursor-not-allowed bg-slate-200 text-slate-400"
-                : "bg-indigo-500/10 text-indigo-500 hover:bg-indigo-500/15"
-            }`}
-        >
+            className={`flex w-full max-w-sm items-center justify-center gap-3 rounded-2xl border border-indigo-500/20 px-6 py-4 text-center text-[11px] font-black uppercase tracking-widest transition sm:w-auto sm:px-8 sm:text-xs ${cameraState.status === "loading"
+              ? "cursor-not-allowed bg-slate-200 text-slate-400"
+              : "bg-indigo-500/10 text-indigo-500 hover:bg-indigo-500/15"
+              }`}
+          >
             <FiRefreshCw />
             {cameraFacingMode === "user" ? "Switch To Back" : "Switch To Front"}
-        </button>
-        
-        {step === 4 && (
+          </button>
+
+          {step === 4 && (
             <div className="flex w-full max-w-sm items-center justify-center gap-3 rounded-2xl border border-indigo-500/20 bg-indigo-500/10 px-5 py-4 sm:w-auto sm:px-8">
-                <div className="h-5 w-5 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin"></div>
-                <span className="text-center text-[11px] font-black uppercase tracking-widest text-indigo-500 sm:text-xs">Processing Vision AI...</span>
+              <div className="h-5 w-5 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin"></div>
+              <span className="text-center text-[11px] font-black uppercase tracking-widest text-indigo-500 sm:text-xs">Processing Vision AI...</span>
             </div>
-        )}
+          )}
         </div>
       </div>
 

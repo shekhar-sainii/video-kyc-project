@@ -14,6 +14,7 @@ import {
 } from "react-icons/fi";
 import Swal from "sweetalert2";
 import authService from "../../services/authService";
+import BeautifulLoader from "../../components/common/BeautifulLoader";
 
 const SignupPage = () => {
   const navigate = useNavigate();
@@ -30,14 +31,31 @@ const SignupPage = () => {
   });
 
   const handleChange = (e) => {
-    setForm((prev) => ({
-      ...prev,
-      [e.target.name]: e.target.value,
-    }));
+    const { name, value } = e.target;
+    setForm((prev) => {
+      const updatedForm = { ...prev, [name]: value };
+      
+      // Real-time password match validation
+      if (name === "confirmPassword" || name === "password") {
+        if (updatedForm.confirmPassword && updatedForm.password !== updatedForm.confirmPassword) {
+          setError("Passwords do not match");
+        } else {
+          setError("");
+        }
+      }
+      
+      return updatedForm;
+    });
+  };
 
-    if (error) {
-      setError("");
-    }
+  const validatePassword = (pass) => {
+    return {
+      length: pass.length >= 8,
+      uppercase: /[A-Z]/.test(pass),
+      lowercase: /[a-z]/.test(pass),
+      number: /[0-9]/.test(pass),
+      special: /[!@#$%^&*(),.?":{}|<>]/.test(pass),
+    };
   };
 
   const handleRegister = async (e) => {
@@ -53,8 +71,9 @@ const SignupPage = () => {
       return;
     }
 
-    if (form.password.length < 6) {
-      setError("Password must be at least 6 characters");
+    const strength = validatePassword(form.password);
+    if (!Object.values(strength).every(Boolean)) {
+      setError("Please fulfill all password strength requirements");
       return;
     }
 
@@ -96,6 +115,7 @@ const SignupPage = () => {
         isDark ? "bg-[#0f172a]" : "bg-[#f4f7fe]"
       }`}
     >
+      {loading && <BeautifulLoader text="Creating Your Secure Vault..." />}
       <div
         className={`flex w-full max-w-5xl overflow-hidden rounded-[2.5rem] shadow-2xl border ${
           isDark ? "bg-[#1a2b4b] border-slate-700" : "bg-white border-slate-100"
@@ -218,6 +238,28 @@ const SignupPage = () => {
                 >
                   {showPassword ? <FiEyeOff size={18} /> : <FiEye size={18} />}
                 </button>
+              </div>
+              {/* Password Strength Checklist */}
+              <div className="mt-3 grid grid-cols-2 gap-2 p-3 bg-slate-50/50 rounded-xl border border-slate-100/50">
+                {[
+                  { key: "length", label: "8+ characters" },
+                  { key: "uppercase", label: "Uppercase" },
+                  { key: "lowercase", label: "Lowercase" },
+                  { key: "number", label: "Number" },
+                  { key: "special", label: "Special char" },
+                ].map((crit) => {
+                  const met = validatePassword(form.password)[crit.key];
+                  return (
+                    <div key={crit.key} className="flex items-center gap-2">
+                      <div className={`w-3 h-3 rounded-full flex items-center justify-center ${met ? "bg-green-500" : "bg-slate-200"}`}>
+                        {met && <FiCheckCircle size={8} className="text-white" />}
+                      </div>
+                      <span className={`text-[9px] font-bold uppercase tracking-tight ${met ? "text-green-600" : "text-slate-400"}`}>
+                        {crit.label}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 

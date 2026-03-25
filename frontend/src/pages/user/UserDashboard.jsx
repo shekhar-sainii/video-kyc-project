@@ -13,6 +13,8 @@ import {
 } from "react-icons/fi";
 import kycService from "../../services/kycService";
 import Swal from "sweetalert2";
+import BeautifulLoader from "../../components/common/BeautifulLoader";
+
 
 const UserDashboard = () => {
   const navigate = useNavigate();
@@ -91,11 +93,8 @@ const UserDashboard = () => {
         </div>
 
         {/* --- Applications List --- */}
-        {loading && (
-          <div className="flex justify-center py-20">
-            <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-          </div>
-        )}
+        {loading && <BeautifulLoader text="Fetching your credentials..." fullScreen={false} />}
+
         <div className="space-y-4">
           {!loading && applications
             .filter(app => !searchTerm || (app.panNumber || app.pan_number || "").toLowerCase().includes(searchTerm.toLowerCase()))
@@ -153,6 +152,7 @@ const UserDashboard = () => {
                     </div>
                   )}
                 </div>
+
 
               </div>
             </div>

@@ -4,6 +4,8 @@ import { useSelector } from "react-redux";
 import { FiArrowLeft, FiCheckCircle, FiCreditCard, FiShield, FiUser } from "react-icons/fi";
 import Swal from "sweetalert2";
 import kycService from "../../../services/kycService";
+import BeautifulLoader from "../../../components/common/BeautifulLoader";
+
 
 const API_BASE_URL =
   import.meta.env.VITE_AUTH_SERVICE_URL?.replace(/\/api\/v1\/?$/, "") || "";
@@ -85,26 +87,9 @@ const AdminKYCReview = () => {
   }, [data]);
 
   if (loading) {
-    return (
-      <div
-        className={`min-h-screen px-4 py-6 sm:px-6 sm:py-8 lg:py-10 ${
-          isDark ? "bg-[#0f172a] text-white" : "bg-[#f8fafd] text-slate-900"
-        }`}
-      >
-        <div className="max-w-7xl mx-auto">
-          <div
-            className={`rounded-[2rem] border-2 p-6 text-sm font-bold sm:p-8 lg:rounded-[2.5rem] lg:p-10 ${
-              isDark
-                ? "bg-[#1a2b4b] border-slate-700"
-                : "bg-white border-slate-100 shadow-sm"
-            }`}
-          >
-            Loading application review...
-          </div>
-        </div>
-      </div>
-    );
+    return <BeautifulLoader text="Accessing Secure Vault..." />;
   }
+
 
   if (!viewData) {
     return null;

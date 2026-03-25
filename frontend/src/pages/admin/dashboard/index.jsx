@@ -11,6 +11,8 @@ import {
 import { useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
 import kycService from "../../../services/kycService";
+import BeautifulLoader from "../../../components/common/BeautifulLoader";
+
 
 const Dashboard = () => {
   const isDark = useSelector((state) => state.theme.mode === "dark");
@@ -157,7 +159,16 @@ const Dashboard = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
-              {(dashboardData.recentQueue || []).map((user, i) => (
+              {loading ? (
+                <tr>
+                  <td colSpan="5" className="py-20">
+                    <BeautifulLoader text="Syncing Compliance Queue..." fullScreen={false} />
+                  </td>
+                </tr>
+              ) : (
+                dashboardData.recentQueue || []
+              ).map((user, i) => (
+
                 <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                   <td className="py-5">
                     <div className="flex items-center gap-3">

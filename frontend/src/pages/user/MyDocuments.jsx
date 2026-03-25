@@ -70,7 +70,7 @@ const MyDocuments = () => {
         </div>
 
         {/* --- DOCUMENTS TABLE --- */}
-        <div className={`rounded-[2rem] border overflow-hidden shadow-sm transition-all ${
+        <div className={`rounded-4xl border overflow-hidden shadow-sm transition-all ${
           isDark ? "bg-[#1a2b4b] border-slate-700" : "bg-white border-slate-100"
         }`}>
           {loading ? (

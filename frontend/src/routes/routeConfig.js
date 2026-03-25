@@ -17,7 +17,7 @@ const ProfilePage = lazy(() => import("../pages/user/ProfilePage"));
 /* --- ADMIN PAGES --- */
 const DashboardPage = lazy(() => import("../pages/admin/dashboard"));
 const UsersAdminPage = lazy(() => import("../pages/admin/users/index"));
-const AuditLogs = lazy(() => import("../pages/admin/logs/index"));
+const AuditLogs = lazy(() => import("../pages/admin/audit-logs/index"));
 const KYCQueue = lazy(() => import("../pages/admin/KYCQueue"));
 const AdminKYCReview = lazy(() => import("../pages/admin/dashboard/AdminKYCReview"));
 

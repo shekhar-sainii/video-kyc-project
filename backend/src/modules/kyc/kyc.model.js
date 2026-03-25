@@ -9,6 +9,12 @@ const kycSchema = new mongoose.Schema(
       required: false,
     },
 
+    fullName: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
     panNumber: {
       type: String,
       required: true,

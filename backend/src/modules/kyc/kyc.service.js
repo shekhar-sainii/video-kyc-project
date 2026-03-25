@@ -4,7 +4,7 @@ const { extractPanNumber } = require("../../services/ocr.service");
 const sendEmail = require("../../utils/sendEmail");
 const kycStatusTemplate = require("../../templates/emails/kycStatus.template");
 const logger = require("../../utils/logger");
-const {StatusCodes} = require("http-status-codes")
+const { StatusCodes } = require("http-status-codes")
 
 const maskPan = (pan) =>
   pan.replace(/^(.{4}).*(.{2})$/, "$1••••$2");
@@ -180,27 +180,26 @@ class KYCService {
     };
   }
 
-  async submitKyc(data) {
-    const panRegex = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
+  async submitKyc({ userId, fullName, panNumber, signature, uploadedPhoto }) {
+    try {
+      const sanitizedPan = panNumber.toUpperCase();
+      const existingApplication = await kycRepository.findByPanNumber(sanitizedPan);
 
-    if (!panRegex.test(data.panNumber)) {
-      throw new Error("Invalid PAN format");
+      if (existingApplication) {
+        throw new Error("KYC application already exists for this PAN number");
+      }
+
+      const application = await kycRepository.create({
+        user: userId,
+        fullName,
+        panNumber: sanitizedPan,
+        signature,
+        uploadedPhoto,
+      });
+      return application;
+    } catch (error) {
+      throw error;
     }
-
-    const existingApplication = await kycRepository.findByPanNumber(
-      data.panNumber
-    );
-
-    if (existingApplication) {
-      throw new Error("KYC application already exists for this PAN number");
-    }
-
-    return await kycRepository.create({
-      user: data.userId,
-      panNumber: data.panNumber,
-      signature: data.signature,
-      uploadedPhoto: data.uploadedPhoto,
-    });
   }
 
   async getApplications(userId) {
@@ -251,7 +250,7 @@ class KYCService {
     }
 
     const [panExtractionResult, faceComparisonResult] = await Promise.allSettled([
-      extractPanNumber(verificationData.panCardImage),
+      extractPanNumber(verificationData.panCardImage, application.panNumber),
       compareFaces(application.uploadedPhoto, verificationData.selfieImage),
     ]);
 
@@ -300,6 +299,8 @@ class KYCService {
     const extractedPan = panExtractionResult.value;
     const faceMatchResult = faceComparisonResult.value;
 
+    console.log(`[KYC] Verification result for ${applicationId}: PAN=${extractedPan || "FAILED"}, Face=${faceMatchResult.matched}`);
+
     if (!extractedPan) {
       const error = new Error(
         "PAN number could not be extracted. Please hold the PAN card closer and keep it steady."
@@ -311,7 +312,12 @@ class KYCService {
     const normalizedExtractedPan = extractedPan.toUpperCase();
     const normalizedApplicationPan = application.panNumber.toUpperCase();
     const panDistance = getPanDistance(normalizedExtractedPan, normalizedApplicationPan);
-    const panMatch = panDistance <= 1;
+    const panMatch = panDistance === 0;
+
+    // Entity Type Validation (4th char)
+    const extractedType = normalizedExtractedPan[3];
+    const expectedType = normalizedApplicationPan[3];
+    const typeMismatch = extractedType !== expectedType;
 
     const faceMatch = faceMatchResult.matched;
     const nextAttempts = currentAttempts + 1;
@@ -331,7 +337,12 @@ class KYCService {
       } else if (!faceMatch) {
         mismatchReason = "Face mismatch";
       } else {
-        mismatchReason = `PAN mismatch${normalizedExtractedPan ? ` (detected ${normalizedExtractedPan})` : ""}`;
+        if (typeMismatch) {
+          mismatchReason = `PAN entity type mismatch (Card is '${extractedType}', Application is '${expectedType}')`;
+        } else {
+          mismatchReason = "PAN number mismatch";
+        }
+        mismatchReason += normalizedExtractedPan ? ` (detected ${normalizedExtractedPan})` : "";
       }
 
       status = attemptsRemaining > 0 ? "Pending" : "Rejected";
